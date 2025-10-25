@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "BeaconUI",
+    "slug": "beacon-ui",
+    "version": "0.0.1",
+    "scheme": "beacon",
+    "orientation": "portrait",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "sdkVersion": "54.0.0",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "dist"
+    },
+    "android": {
+      "package": "com.hd_johnny.beaconui"
+    },
+    "ios": {
+      "bundleIdentifier": "com.hd-johnny.beaconui"
+    },
+  "expo": {
+    "experiments": {
+      "newArchEnabled": false
+    }
+  }
+  }
+}
