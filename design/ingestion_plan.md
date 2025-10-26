@@ -154,9 +154,9 @@ The Common Data Model defines the necessary structure for legislative data norma
 
 The CDM adheres to critical principles designed for global scale and longevity:
 
-1. **Universal Identifiers:** Each instance of a core entity must possess a system-generated UUID (\*\_id\_global) that serves as the immutable primary key. This is distinctly separate from the source’s native identifier (\*\_id\_source) (e.g., Bioguide ID). This abstraction is necessary because source IDs may change or be jurisdiction-specific, whereas the global ID ensures constant, centralized entity resolution across all ingestion pipelines (e.g., whether the data originated from Congress.gov or LegiScan).  
-2. **Hierarchical Linkage:** The model must enforce clear and consistent parent-child relationships, specifically linking the PublicOfficial and VotingRecord entities to the LegislativeBody entity. This accommodates complex legislative structures, such as bicameral systems (House $\\leftrightarrow$ Senate) and multi-national groups (EU Parliament).  
-3. **Normalized Enumerations:** All high-cardinality categorical data, particularly the vote\_position, must utilize a standardized set of string enumerations (e.g., YEA, NAY, ABSENT, NOT\_VOTING). This normalization step is vital for unifying disparate source labels—for instance, mapping the US 'Yea' or UK 'Aye' to the common YEA value, facilitating unified analysis.
+1. **Universal Identifiers:** Each instance of a core entity must possess a system-generated `uuid` that serves as the immutable primary key. This is distinctly separate from the source’s native identifier (`source_id`) (e.g., Bioguide ID). This abstraction is necessary because source IDs may change or be jurisdiction-specific, whereas the global ID ensures constant, centralized entity resolution across all ingestion pipelines (e.g., whether the data originated from Congress.gov or LegiScan).
+2. **Hierarchical Linkage:** The model must enforce clear and consistent parent-child relationships, specifically linking the `PublicOfficial` and `VotingRecord` entities to the `LegislativeBody` entity. This accommodates complex legislative structures, such as bicameral systems (House $\\leftrightarrow$ Senate) and multi-national groups (EU Parliament).
+3. **Normalized Enumerations:** All high-cardinality categorical data, particularly the `vote_position`, must utilize a standardized set of string enumerations (e.g., `YEA`, `NAY`, `ABSENT`, `NOT_VOTING`). This normalization step is vital for unifying disparate source labels—for instance, mapping the US “Yea” or UK “Aye” to the common `YEA` value, facilitating unified analysis.
 
 ### **B. Entity Relationship Model (Conceptual)**
 
@@ -173,48 +173,94 @@ This entity captures the structural and geographical context required for global
 
 | Property Name | Data Type | Description | Requirement | Extensibility Note |
 | :---- | :---- | :---- | :---- | :---- |
-| body\_id\_global | String (UUID) | Primary key, uniquely identifying the chamber/body. | Mandatory |  |
-| jurisdiction\_type | Enum (String) | Federal (US), State (TX), Provincial, Supranational (EU). | Mandatory | Defines the governmental level. |
-| jurisdiction\_code | String | ISO Alpha-2 country code (US, UK) or regional ID. | Mandatory | Links the body to a political geography (e.g., US Federal, TX State). |
-| body\_name\_source | String | Official chamber name (e.g., "U.S. House of Representatives," "House of Lords"). | Mandatory | Required to distinguish between UK Commons vs. Lords.8 |
-| chamber\_type | Enum (String) | Upper (Senate, Lords), Lower (House), Unicameral, Supranational. | Mandatory | Enforces normalization of bicameral systems. |
+| uuid | String (UUID) | Primary key, uniquely identifying the chamber/body. | Mandatory |  |
+| source_id | String | Source-provided identifier for the chamber/body. | Mandatory | Supports reconciliation with external data catalogs. |
+| jurisdiction_type | Enum (String) | Federal (US), State (TX), Provincial, Supranational (EU). | Mandatory | Defines the governmental level. |
+| jurisdiction_code | String | ISO Alpha-2 country code (US, UK) or regional ID. | Mandatory | Links the body to a political geography (e.g., US Federal, TX State). |
+| name | String | Official chamber name (e.g., "U.S. House of Representatives," "House of Lords"). | Mandatory | Required to distinguish between UK Commons vs. Lords.8 |
+| chamber_type | Enum (String) | Upper (Senate, Lords), Lower (House), Unicameral, Supranational. | Mandatory | Enforces normalization of bicameral systems. |
+| session | String | Session or legislature identifier supplied by the source. | Optional | Supports multi-session jurisdictions (e.g., Congress number). |
 
 ### **D. Entity Definition 2: PublicOfficial**
 
-The PublicOfficial entity is designed to store standardized biographical and role data. The US Federal data will map the bioguideId to the official\_id\_source.3
+The PublicOfficial entity is designed to store standardized biographical and role data. The US Federal data will map the bioguideId to the `source_id`.3
 
 Table 3: Common Data Model (CDM) Entity: PublicOfficial Property Definitions
 
 | Property Name | Data Type | Description | Requirement | Source Mapping Example (US Federal) | Extensibility Note |
 | :---- | :---- | :---- | :---- | :---- | :---- |
-| official\_id\_global | String (UUID) | Primary key. | Mandatory | Generated UUID | Required for analytical joins. |
-| official\_id\_source | String | Unique source identifier. | Mandatory | bioguideId 3 | Maps to various unique IDs globally (MEP ID, MP ID). |
-| legislative\_body\_fk | String | Foreign key linking to the specific chamber (body\_id\_global). | Mandatory | ID for the "US House (118th Congress)" | Tracks specific tenure within a body. |
-| full\_name | String | Official's canonical name. | Mandatory | Name fields from /member endpoint 3 | Standardized format required for cross-jurisdictional querying. |
-| party\_affiliation | String | Current political party or group code. | Mandatory | Party code (e.g., 'R', 'D') 1 | Must generalize to accommodate EU "Group" IDs.2 |
-| role\_title | String | Specific role title (e.g., Senator, MEP, MP). | Mandatory | Title from Congress role data 1 | Retains jurisdiction-specific role terminology. |
-| jurisdiction\_region\_code | String (Alpha-2) | State or Country code. | Mandatory | State Code from /member/{stateCode} 3 | Maps to Country (EU/UK). |
-| district\_identifier | String | District number, constituency name, or electoral region code. | Conditional | District number from Congress data 3 | Must accommodate numerical US districts and descriptive UK constituencies.9 |
-| term\_start\_date | Date | Date the current term began. | Optional | Role data start date 1 | Supports historical tenure tracking. |
+| uuid | String (UUID) | Primary key. | Mandatory | Generated UUID | Required for analytical joins. |
+| source_id | String | Unique source identifier. | Mandatory | bioguideId 3 | Maps to various unique IDs globally (MEP ID, MP ID). |
+| legislative_body_uuid | String | Foreign key linking to the specific chamber (`LegislativeBody.uuid`). | Mandatory | ID for the "US House (118th Congress)" | Tracks specific tenure within a body. |
+| full_name | String | Official's canonical name. | Mandatory | Name fields from /member endpoint 3 | Standardized format required for cross-jurisdictional querying. |
+| party_affiliation | String | Current political party or group code. | Mandatory | Party code (e.g., "R", "D") 1 | Must generalize to accommodate EU "Group" IDs.2 |
+| role_title | String | Specific role title (e.g., Senator, MEP, MP). | Mandatory | Title from Congress role data 1 | Retains jurisdiction-specific role terminology. |
+| jurisdiction_region_code | String (Alpha-2) | State or Country code. | Mandatory | State Code from /member/{stateCode} 3 | Maps to Country (EU/UK). |
+| district_identifier | String | District number, constituency name, or electoral region code. | Conditional | District number from Congress data 3 | Must accommodate numerical US districts and descriptive UK constituencies.9 |
+| term_start_date | Date | Date the current term began. | Optional | Role data start date 1 | Supports historical tenure tracking. |
+| term_end_date | Date | Date the current term ended or is expected to end. | Optional | Role data end date 1 | Enables vacancy forecasting and transition analysis. |
+| office_status | Enum (String) | Current status of the seat (Active, Vacant, Suspended, Retired). | Mandatory | Derived from status feeds | Supports vacancy management and resignations. |
+| biography_url | String | External biography reference. | Optional | Biography links from Congress.gov | Facilitates enrichment. |
+| photo_url | String | Image asset URI. | Optional | Photo URL from member detail | Supports UI rendering. |
 
 ### **E. Entity Definition 3 & 4: VotingRecord and MemberVote**
 
 These entities capture the vote event metadata and the granular individual position. The normalization of the vote\_position enumeration is the most critical element for making voting records globally comparable.
 
-Table 4: Common Data Model (CDM) Entities: VotingRecord and MemberVote Property Definitions
+Table 4: Common Data Model (CDM) Entity: VotingRecord Property Definitions
 
-| Property Name | Data Type | Description | Entity | Source Mapping Example (US Federal) | Extensibility Note |
-| :---- | :---- | :---- | :---- | :---- | :---- |
-| vote\_id\_global | String (UUID) | Primary key for the vote event. | VotingRecord | Generated UUID | Required for linking multiple member votes. |
-| vote\_id\_source | String | Unique source identifier. | VotingRecord | Concatenation of {congress}-{session}-{voteNumber} 3 | Required for reconciliation with source data. |
-| legislative\_body\_fk | String | Foreign key linking to the legislative chamber (body\_id\_global). | VotingRecord | Chamber ID (House/Senate) | Allows precise vote filtering by chamber. |
-| vote\_date\_utc | DateTime | Date and time the roll call vote occurred (UTC standard). | VotingRecord | Data from roll call response 1 | Timezone standardization is mandatory for international data coherence. |
-| bill\_reference\_fk | String | Identifier for the related bill or motion. | VotingRecord | Bill data linked to the vote | Provides legislative context. |
-| subject\_summary | String | Short description of the vote matter. | VotingRecord | Description fields from vote endpoint 1 | Essential for vote classification and topic analysis. |
-| member\_vote\_id | String (UUID) | Primary key for the specific member's action. | MemberVote | Generated UUID | Ensures unique tracking of each official’s decision. |
-| official\_id\_fk | String | Foreign key linking to the PublicOfficial (official\_id\_global). | MemberVote | Derived Official ID | Links the position to the individual. |
-| vote\_position | Enum (String) | The official's recorded position. **Standardized ENUM: YEA, NAY, ABSENT, NOT\_VOTING.** | MemberVote | Position data from /members endpoint 3 | Normalizes disparate terms (e.g., Aye, No, Present) globally. |
-| group\_position | String | Position dictated by the member's party or political group. | MemberVote | Future field, not provided by Congress.gov API but anticipated for LegiScan/EU data. | Crucial for party cohesion and compliance analysis. |
+| Property Name | Data Type | Description | Source Mapping Example (US Federal) | Extensibility Note |
+| :---- | :---- | :---- | :---- | :---- |
+| uuid | String (UUID) | Primary key for the vote event. | Generated UUID | Required for linking multiple member votes. |
+| source_id | String | Unique source identifier. | Concatenation of `{congress}-{session}-{voteNumber}` 3 | Required for reconciliation with source data. |
+| legislative_body_uuid | String | Foreign key linking to the legislative chamber (`LegislativeBody.uuid`). | Chamber ID (House/Senate) | Allows precise vote filtering by chamber. |
+| vote_date_utc | DateTime | Date and time the roll call vote occurred (UTC standard). | Data from roll call response 1 | Timezone standardization is mandatory for international data coherence. |
+| subject_summary | String | Short description of the vote matter. | Description fields from vote endpoint 1 | Essential for vote classification and topic analysis. |
+| bill_reference | String | Identifier for the related bill or motion. | Bill data linked to the vote | Provides legislative context. |
+| bill_uri | String | Canonical URI to the bill or motion, when provided. | Bill URLs from vote metadata | Supports deep linking and traceability. |
+| roll_call_reference | String | Source-provided roll call reference number or URL. | Roll call link from Congress.gov | Enables verification workflows. |
+| member_votes | Array<MemberVote> | Embedded collection of member vote facts for the record. | Member positions payload | Simplifies event transmission. |
+
+Table 5: Common Data Model (CDM) Entity: MemberVote Property Definitions
+
+| Property Name | Data Type | Description | Source Mapping Example (US Federal) | Extensibility Note |
+| :---- | :---- | :---- | :---- | :---- |
+| uuid | String (UUID) | Primary key for the specific member's action. | Generated UUID | Ensures unique tracking of each official’s decision. |
+| source_id | String | Unique source identifier for the member vote when available. | `{voteNumber}-{bioguideId}` | Supports deduplication from high-volume feeds. |
+| official_uuid | String | Foreign key linking to the `PublicOfficial` (`uuid`). | Derived official UUID | Links the position to the individual. |
+| voting_record_uuid | String | Foreign key linking back to the parent `VotingRecord`. | Generated UUID | Supports fact table joins. |
+| vote_position | Enum (String) | The official's recorded position. **Standardized ENUM: `YEA`, `NAY`, `ABSENT`, `NOT_VOTING`.** | Position data from /members endpoint 3 | Normalizes disparate terms (e.g., Aye, No, Present) globally. |
+| group_position | String | Position dictated by the member's party or political group. | Future field, not provided by Congress.gov API but anticipated for LegiScan/EU data. | Crucial for party cohesion and compliance analysis. |
+| notes | String | Free-form annotations or ingest warnings. | Ingestion service warnings | Supports audit trails and remediation. |
+
+### **F. Support Entities: AccountabilityMetric and OfficialAccountabilityEvent**
+
+While the initial ingestion scope prioritizes officials and vote data, the platform must also carry accountability scoring metadata and a transport envelope for Kafka streaming. These entities ensure downstream services receive a fully contextual payload.
+
+Table 6: Common Data Model (CDM) Entity: AccountabilityMetric Property Definitions
+
+| Property Name | Data Type | Description | Extensibility Note |
+| :---- | :---- | :---- | :---- |
+| uuid | String (UUID) | Primary key for the accountability metric. | Supports independent lifecycle management for each metric version. |
+| source_id | String | Source-provided identifier (if available). | Allows reconciliation with third-party scoring services. |
+| name | String | Metric name (e.g., "Promise Alignment"). | Enables multi-metric analytics without schema changes. |
+| score | Double | Normalized score value. | Supports fractional scoring models. |
+| methodology_version | String | Version label for the scoring methodology. | Critical for auditability when methodologies change. |
+| details | String | Free-form explanation or calculation notes. | Facilitates transparency in accountability reporting. |
+
+Table 7: Event Envelope: OfficialAccountabilityEvent Property Definitions
+
+| Property Name | Data Type | Description | Extensibility Note |
+| :---- | :---- | :---- | :---- |
+| uuid | String (UUID) | Primary key for the event envelope. | Guarantees idempotent processing across services. |
+| source_id | String | Source identifier for the event payload. | Supports traceability when replaying source events. |
+| captured_at | DateTime | Timestamp (UTC) when the event snapshot was produced. | Enables ordering and freshness analytics. |
+| ingestion_source | String | Identifier for the ingestion agent/service. | Supports multi-agent federation across jurisdictions. |
+| partition_key | String | Deterministic key used for Kafka partitioning. | Ensures all updates for an official land on the same partition. |
+| legislative_body | LegislativeBody | Embedded jurisdiction context for the event. | Provides downstream services with immediate hierarchy metadata. |
+| public_official | PublicOfficial | Embedded official profile snapshot. | Supports stateless consumers that do not maintain a lookup cache. |
+| voting_records | Array<VotingRecord> | Set of vote events included in this message. | Allows batching multiple votes per official per event. |
+| accountability_metrics | Array<AccountabilityMetric> | Optional accountability scoring summaries. | Extends naturally as more metrics are introduced. |
 
 ## **V. Agentic Development Input and Data Mapping Specifications**
 
@@ -224,9 +270,9 @@ The success of the agentic development relies on precise, prescriptive instructi
 
 The ingestion agent must execute the following atomic mapping steps for every ingested record:
 
-1. **Unique ID Generation:** For every new entity instance (PublicOfficial, VotingRecord, MemberVote), a system-generated UUID must be created for the \*\_id\_global field immediately upon processing the source record. This global ID must be used as the internal primary key, independent of the source identifier.  
-2. **Official ID Mapping:** The Congress.gov unique identifier, the $member.bioguideId, must be mapped directly to the official\_id\_source property in the PublicOfficial entity.  
-3. **Vote ID Mapping:** Since Congress.gov uses composite path parameters for vote identification, the vote\_id\_source must be constructed via concatenation: "{congress}-{session}-{voteNumber}". This composite key ensures source traceability for the unique vote event.3  
+1. **Unique ID Generation:** For every new entity instance (`PublicOfficial`, `VotingRecord`, `MemberVote`), a system-generated UUID must be created for the `uuid` field immediately upon processing the source record. This global ID must be used as the internal primary key, independent of the source identifier.
+2. **Official ID Mapping:** The Congress.gov unique identifier, the $member.bioguideId, must be mapped directly to the `source_id` property in the `PublicOfficial` entity.
+3. **Vote ID Mapping:** Since Congress.gov uses composite path parameters for vote identification, the `source_id` on `VotingRecord` must be constructed via concatenation: "{congress}-{session}-{voteNumber}". This composite key ensures source traceability for the unique vote event.3
 4. **Vote Position Normalization:** The source API's position codes (which may vary in capitalization or abbreviation, e.g., 'Y', 'N', 'NV') must be mapped strictly to the CDM's standardized ENUM:  
    * Source 'Y' (Yea/Aye) $\\rightarrow$ CDM YEA  
    * Source 'N' (Nay/No) $\\rightarrow$ CDM NAY  
@@ -237,7 +283,7 @@ The ingestion agent must execute the following atomic mapping steps for every in
 
 The CDM is engineered to anticipate structural differences outside the US Federal context, ensuring high extensibility:
 
-* **Political Grouping Abstraction:** The party\_affiliation field is designed as a generalized string identifier. While it stores simple party codes (R, D) for the US Federal system 1, it will accommodate the more complex, descriptive Group names utilized in the EU Parliament data.2 This abstraction prevents the US two-party system from dictating the global model structure. Furthermore, the handling of members changing parties or roles during a term, an event noted in ProPublica's historical documentation 1, is managed by linking the PublicOfficial entity to the specific legislative\_body\_fk which includes the temporal context of the Congress or Session.  
+* **Political Grouping Abstraction:** The `party_affiliation` field is designed as a generalized string identifier. While it stores simple party codes (R, D) for the US Federal system 1, it will accommodate the more complex, descriptive Group names utilized in the EU Parliament data.2 This abstraction prevents the US two-party system from dictating the global model structure. Furthermore, the handling of members changing parties or roles during a term, an event noted in ProPublica's historical documentation 1, is managed by linking the `PublicOfficial` entity to the specific `legislative_body_uuid` which includes the temporal context of the Congress or Session.
 * **Regional and Constituency Mapping:** The UK Parliament's APIs necessitate mapping MPs to named constituencies, sometimes including geometry and election results.9 By defining district\_identifier as a flexible string type, the CDM can seamlessly accommodate numerical US district codes 3 alongside descriptive international constituency names, maintaining a single, unified field for regional linkage.  
 * **Auxiliary Data Integration:** While the immediate focus is on voting records, the Congress.gov API includes endpoints for data like sponsored and cosponsored legislation.3 These ancillary data streams should be stored in dedicated, related tables (e.g., OfficialLegislation) that link back to the PublicOfficial entity via the global UUID, preventing the core biographical entity from becoming overly complex.
 
@@ -245,7 +291,7 @@ The CDM is engineered to anticipate structural differences outside the US Federa
 
 The underlying data architecture is a classic dimensional model, optimized for analytical performance and massive scalability, particularly crucial for global expansion. The design isolates the high-volume, repetitive vote positions into a central fact table.
 
-The **MemberVote Fact Table** is the scalable anchor. It contains the minimal amount of data necessary: only foreign keys (official\_id\_fk, vote\_id\_fk) and the single, normalized vote\_position. By keeping this table highly granular and narrow, the system is designed to absorb the high volume of historical data that will eventually be ingested. Analytical queries are executed by efficiently joining this lightweight fact table against the dimension tables (PublicOfficial, VotingRecord, LegislativeBody), which change much less frequently. This design ensures the platform can rapidly process complex analytical questions (e.g., party cohesion scores, historical voting alignment) without degradation, irrespective of the number of jurisdictions integrated.
+The **MemberVote Fact Table** is the scalable anchor. It contains the minimal amount of data necessary: only foreign keys (`official_uuid`, `voting_record_uuid`) and the single, normalized `vote_position`. By keeping this table highly granular and narrow, the system is designed to absorb the high volume of historical data that will eventually be ingested. Analytical queries are executed by efficiently joining this lightweight fact table against the dimension tables (`PublicOfficial`, `VotingRecord`, `LegislativeBody`), which change much less frequently. This design ensures the platform can rapidly process complex analytical questions (e.g., party cohesion scores, historical voting alignment) without degradation, irrespective of the number of jurisdictions integrated.
 
 ## **VI. Conclusions and Recommendations**
 
