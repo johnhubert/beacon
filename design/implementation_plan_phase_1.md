@@ -7,19 +7,19 @@
 - [ ] Produce operations notes: how to backfill/replay the single source, how to inspect Kafka lag, how to patch a Mongo document, and how to roll services forward.
 
 ## Workstream A – Unified Accountability Data Model
-- [ ] Draft the canonical protobuf schema describing: identity metadata, current office + term, latest voting record summaries, recent statements, accountability deltas (statements vs actions), and data provenance.
-- [ ] Generate Java POJOs from the proto definitions and validate that the objects serialize directly into MongoDB documents (flatten identifiers, use embedded sub-docs for votes/statements).
+- [x] Draft the canonical protobuf schema describing: identity metadata, current office + term, latest voting record summaries, recent statements, accountability deltas (statements vs actions), and data provenance.
+- [x] Generate Java POJOs from the proto definitions and validate that the objects serialize directly into MongoDB documents (flatten identifiers, use embedded sub-docs for votes/statements).
 - [ ] Document Mongo collection structure (one `official_state` document per official) and required indexes (identity hash, office, geography).
 - [ ] Define mapping guidance for downstream systems (UI queries, future scoring engines) so the same schema can be reused without drift.
 
 ## Workstream B – Source Collector Microservice
-- [ ] Scaffold a Spring Boot (or preferred JVM) service that authenticates against the selected federal site, runs scheduled scrapes/pulls, and emits protobuf `OfficialAccountabilityEvent` messages.
+- [x] Scaffold a Spring Boot (or preferred JVM) service that authenticates against the selected federal site, runs scheduled scrapes/pulls, and emits protobuf `OfficialAccountabilityEvent` messages.
 - [ ] Implement normalization + deduplication rules to ensure each record maps cleanly to the unified schema; drop or quarantine malformed payloads with visibility in logs/metrics.
 - [ ] Package the service with structured logging, health checks, and lightweight metrics (fetch counts, failures, latency) to inform observability from day one.
 
 ## Workstream C – Kafka Backbone
-- [ ] Deploy a local/dev Kafka stack (broker, ZooKeeper/KRaft, schema registry if needed) via docker-compose.
-- [ ] Create the primary topic (e.g., `official-accountability-events`) with partitions sized for expected growth and configure the identity-hash partitioner.
+- [x] Deploy a local/dev Kafka stack (broker, ZooKeeper/KRaft, schema registry if needed) via docker-compose.
+- [x] Create the primary topic (e.g., `official-accountability-events`) with partitions sized for expected growth and configure the identity-hash partitioner.
 - [ ] Automate schema registration and topic configuration inside the repo (scripts or IaC) so pipelines can be bootstrapped consistently.
 - [ ] Build a mock-producer CLI/tool to publish sample events for local validation and automated tests.
 

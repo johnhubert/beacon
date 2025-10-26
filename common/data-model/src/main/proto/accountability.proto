@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package beacon.accountability.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.beacon.common.accountability.v1";
+option java_outer_classname = "AccountabilityModels";
+
+// Identifies the governing level associated with a legislative body.
+enum JurisdictionType {
+  JURISDICTION_TYPE_UNSPECIFIED = 0;
+  FEDERAL = 1;
+  STATE = 2;
+  PROVINCIAL = 3;
+  SUPRANATIONAL = 4;
+  MUNICIPAL = 5;
+}
+
+// Captures the chamber or governing body classification.
+enum ChamberType {
+  CHAMBER_TYPE_UNSPECIFIED = 0;
+  UNICAMERAL = 1;
+  LOWER = 2;
+  UPPER = 3;
+  COMMITTEE = 4;
+}
+
+// Tracks the latest status for an elected official.
+enum OfficeStatus {
+  OFFICE_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  VACANT = 2;
+  SUSPENDED = 3;
+  RETIRED = 4;
+}
+
+// Normalized vote position taxonomy for global interoperability.
+enum VotePosition {
+  VOTE_POSITION_UNSPECIFIED = 0;
+  YEA = 1;
+  NAY = 2;
+  ABSENT = 3;
+  NOT_VOTING = 4;
+}
+
+message LegislativeBody {
+  string uuid = 1;
+  string source_id = 2;
+  JurisdictionType jurisdiction_type = 3;
+  string jurisdiction_code = 4;
+  string name = 5;
+  ChamberType chamber_type = 6;
+  string session = 7;
+}
+
+message PublicOfficial {
+  string uuid = 1;
+  string source_id = 2;
+  string legislative_body_uuid = 3;
+  string full_name = 4;
+  string party_affiliation = 5;
+  string role_title = 6;
+  string jurisdiction_region_code = 7;
+  string district_identifier = 8;
+  google.protobuf.Timestamp term_start_date = 9;
+  google.protobuf.Timestamp term_end_date = 10;
+  OfficeStatus office_status = 11;
+  string biography_url = 12;
+  string photo_url = 13;
+}
+
+message MemberVote {
+  string uuid = 1;
+  string source_id = 2;
+  string official_uuid = 3;
+  string voting_record_uuid = 4;
+  VotePosition vote_position = 5;
+  string group_position = 6;
+  string notes = 7;
+}
+
+message VotingRecord {
+  string uuid = 1;
+  string source_id = 2;
+  string legislative_body_uuid = 3;
+  google.protobuf.Timestamp vote_date_utc = 4;
+  string subject_summary = 5;
+  string bill_reference = 6;
+  string bill_uri = 7;
+  string roll_call_reference = 8;
+  repeated MemberVote member_votes = 9;
+}
+
+message AccountabilityMetric {
+  string uuid = 1;
+  string source_id = 2;
+  string name = 3;
+  double score = 4;
+  string methodology_version = 5;
+  string details = 6;
+}
+
+message OfficialAccountabilityEvent {
+  string uuid = 1;
+  string source_id = 2;
+  google.protobuf.Timestamp captured_at = 3;
+  string ingestion_source = 4;
+  string partition_key = 5;
+  LegislativeBody legislative_body = 6;
+  PublicOfficial public_official = 7;
+  repeated VotingRecord voting_records = 8;
+  repeated AccountabilityMetric accountability_metrics = 9;
+}

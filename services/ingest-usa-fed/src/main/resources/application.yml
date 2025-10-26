@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: ingest-usa-fed
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    client-id: ingest-usa-fed
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      properties:
+        linger.ms: 50
+        acks: all
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+beacon:
+  congress:
+    base-url: ${CONGRESS_BASE_URL:https://api.congress.gov/v3}
+    api-key: ${CONGRESS_API_KEY:demo-api-key}
+    poll-interval: ${CONGRESS_POLL_INTERVAL:PT5M}
+    chamber: ${CONGRESS_DEFAULT_CHAMBER:Senate}
