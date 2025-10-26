@@ -49,6 +49,7 @@ Learn more about adding backend modules in `backend/README.md`.
 - Docker + Docker Compose v2
 - Node 20+ and npm (only if you want to run Expo locally outside Docker)
 - Java 21+ (for direct Spring Boot development)
+- Gradle 9.1 (provided via the included `./gradlew` wrapper)
 
 ## Running everything with Docker
 
@@ -71,6 +72,8 @@ The nginx gateway handles:
 - `/api/**` → REST Spring Boot service
 - `/api/events` → SSE Spring Boot service with 1 Hz heartbeats
 
+Kafka now runs in a single-node KRaft (ZooKeeper-free) mode. The broker auto-creates topics with 6 partitions (matching the old manual init step) the first time producers publish. If you need to reset state completely, run `docker compose down --volumes` to drop the embedded log directory and let the broker re-format itself on the next startup.
+
 ## Developing the UI with Expo
 
 ```bash
@@ -89,14 +92,18 @@ server. nginx proxies requests back to this container.
 
 ## Spring Boot services
 
-Each backend module is a standalone Spring Boot 3.3/JDK 21 project. Build or
-run them individually, for example:
+Each backend module is part of the shared Gradle build (Spring Boot 3.3 / JDK 21). Build or
+run them individually from the repo root, for example:
 
 ```bash
-cd backend/rest-service
-mvn spring-boot:run
+./gradlew :backend:rest-service:bootRun
+```
+
+To build every module (including generated protobuf classes) run:
+
+```bash
+./gradlew build
 ```
 
 Both services expose `/actuator/health` and are configured to match the
 container ports used by Docker Compose.
-

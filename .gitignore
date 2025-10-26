@@ -6,6 +6,8 @@ dist/
 
 # Java
 **/target/
+**/build/
+.gradle/
 *.log
 
 # OS / IDE
