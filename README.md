@@ -3,36 +3,35 @@
 Scaffolding for the Beacon civic accountability platform, organized as a
 monorepo with a React Native (Expo) UI and Spring Boot microservices.
 
-## Overview
+##  Platform Overview
 
-Think of Beacon like ESPN for civic accountability: open the app to check an official’s BIG ScoreTM and the story behind it –
-with receipts. The same “one clear card” travels across platforms so people encounter trusted, source-linked information
-wherever they are.
-Core model
-Mobile-first app with a complementary web – plus a portable card that can be shared and embedded – and a licensable
-data layer for partners. We make accountability legible and trackable without partisan framing.
-Where it lives
-App and web – deep links resolve to an official source-linked card for each official or issue
-How it travels
-Embeddable cards – drop into articles, newsletters, and posts, auto-updating with receipts
-Creator packaging – short segments by trusted voices that always link back to the official Beacon card
-Alerts & digests – push and email for watched officials and issues
-Partners
-Dashboards – simple, licensable workspaces for newsrooms, universities, NGOs to track BIG Scores, changes & receipts
-Broadcast/OTT – clean on-air graphics and a data feed for civic coverage when needed
-Trust & controls
-Every view links to sources; watermark and attribution preserved; no comment threads inside embeds; plain-English
-summaries; localization across major languages
-Data layer
-Clean endpoints for BIG Score, votes, statements, funding, and receipts – with basic usage tiers and analytics for
-institutional partners
-Phasing
-Phase 1 – App + web, embeddable cards, creator packaging, alerts
-Phase 2 – Partner dashboards and simple community tools
-Phase 3 – Broadcast feed and broader internationalization
-Bottom line
-Beacon is an app you can open, a card you can share, and a trusted layer partners can license – one clear card that lines
-up words vs deeds with receipts, everywhere people already are
+Beacon integrates verified civic information, accountability metrics, civic tools, and cultural mechanics into a
+single mobile-native experience — designed to turn awareness into action and participation into habit.
+Signal LayerTM (Real-Time Facts)
+Beacon turns scattered civic information into one clear, verifiable view — personalized by issue, location, and user priority
+(including records, verified journalism, verified social accounts, and civic events).
+
+### BIG ScoreTM Accountability
+A proprietary, nonpartisan rating system that measures alignment between elected officials’ promises, public statements,
+and legislative behavior.
+
+### Civic Tools
+Dashboards, flash polls, sentiment tracking, and personalized alerts — built for comprehension, virality, and continuous
+engagement.
+
+### Polling & Sentiment Engine
+Behavioral polling and real-time sentiment analysis generate a dynamic civic signal — powering BIG Score updates,
+personalized insights, and high-margin data products for campaigns, institutions, and researchers.
+
+### Community Layer
+Civic Clubs, gamified challenges, creator-led initiatives, and social sharing drive interaction, motivation, and collective
+participation.
+
+### Candidate Engagement
+Verified profiles, live Q&As, and scalable town halls foster transparency, direct connection, and trust between candidates
+and constituents.
+Beacon functions as both civic trust infrastructure and a platform for participation — bridging the gap between passive
+awareness and active civic life.
 
 ## Repository layout
 
@@ -101,32 +100,3 @@ mvn spring-boot:run
 Both services expose `/actuator/health` and are configured to match the
 container ports used by Docker Compose.
 
-##  Platform Overview
-
-Beacon integrates verified civic information, accountability metrics, civic tools, and cultural mechanics into a
-single mobile-native experience — designed to turn awareness into action and participation into habit.
-Signal LayerTM (Real-Time Facts)
-Beacon turns scattered civic information into one clear, verifiable view — personalized by issue, location, and user priority
-(including records, verified journalism, verified social accounts, and civic events).
-
-### BIG ScoreTM Accountability
-A proprietary, nonpartisan rating system that measures alignment between elected officials’ promises, public statements,
-and legislative behavior.
-
-### Civic Tools
-Dashboards, flash polls, sentiment tracking, and personalized alerts — built for comprehension, virality, and continuous
-engagement.
-
-### Polling & Sentiment Engine
-Behavioral polling and real-time sentiment analysis generate a dynamic civic signal — powering BIG Score updates,
-personalized insights, and high-margin data products for campaigns, institutions, and researchers.
-
-### Community Layer
-Civic Clubs, gamified challenges, creator-led initiatives, and social sharing drive interaction, motivation, and collective
-participation.
-
-### Candidate Engagement
-Verified profiles, live Q&As, and scalable town halls foster transparency, direct connection, and trust between candidates
-and constituents.
-Beacon functions as both civic trust infrastructure and a platform for participation — bridging the gap between passive
-awareness and active civic life.
