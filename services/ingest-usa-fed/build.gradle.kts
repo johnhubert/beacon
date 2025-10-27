@@ -18,6 +18,7 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     implementation(project(":common:data-model"))
     implementation(project(":common:stateful-client"))
+    implementation(project(":common:congress-client"))
 
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
