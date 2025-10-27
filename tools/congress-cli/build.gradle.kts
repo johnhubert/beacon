@@ -1,9 +1,12 @@
+import org.gradle.api.tasks.Sync
+
 plugins {
     application
 }
 
 application {
     mainClass.set("com.beacon.tools.congress.cli.CongressCli")
+    applicationName = "congress-cli"
 }
 
 dependencies {
@@ -26,4 +29,28 @@ java {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+val installDist by tasks.existing(Sync::class)
+
+val assembleToolDistribution by tasks.registering(Sync::class) {
+    dependsOn(installDist)
+
+    val applicationName = project.name
+    val installDir = layout.buildDirectory.dir("install/$applicationName")
+
+    into(rootProject.layout.buildDirectory.dir("tools"))
+
+    from(installDir.map { it.dir("lib") }) {
+        into("lib")
+    }
+
+    from(installDir.map { it.file("bin/$applicationName") }) {
+        into("scripts")
+        rename { _ -> "${applicationName}.sh" }
+    }
+}
+
+tasks.named("assemble") {
+    dependsOn(assembleToolDistribution)
 }

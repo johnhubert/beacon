@@ -4,9 +4,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
 
-if [[ ! -x "${PROJECT_ROOT}/gradlew" ]]; then
-  echo "Unable to locate Gradle wrapper. Run this script from within the repository." >&2
+TOOL_SCRIPT="${PROJECT_ROOT}/build/tools/scripts/congress-cli.sh"
+
+if [[ ! -x "${TOOL_SCRIPT}" ]]; then
+  echo "Unable to locate congress-cli distribution. Run './gradlew buildTools' first." >&2
   exit 1
 fi
 
-exec "${PROJECT_ROOT}/gradlew" :tools:congress-cli:run --args "$*"
+exec "${TOOL_SCRIPT}" "$@"

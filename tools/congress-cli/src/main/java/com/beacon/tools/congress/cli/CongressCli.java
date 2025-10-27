@@ -61,6 +61,11 @@ public final class CongressCli {
 
     int execute(String[] args) {
         Options options = buildOptions();
+        if (args.length == 0 || hasHelpFlag(args)) {
+            printUsage(options);
+            return 0;
+        }
+
         CommandLineParser parser = new DefaultParser();
         CommandLine commandLine;
         try {
@@ -69,11 +74,6 @@ public final class CongressCli {
             err.printf("Error: %s%n%n", ex.getMessage());
             printUsage(options);
             return 1;
-        }
-
-        if (commandLine.hasOption("help") || args.length == 0) {
-            printUsage(options);
-            return 0;
         }
 
         Operation operation;
@@ -102,7 +102,7 @@ public final class CongressCli {
             return 1;
         }
 
-        String propertiesPath = commandLine.getOptionValue("config", "gradle.properties");
+        String propertiesPath = commandLine.getOptionValue("key-file", "gradle.properties");
 
         Properties properties;
         try {
@@ -357,8 +357,8 @@ public final class CongressCli {
                 formatter.getLeftPadding(),
                 formatter.getDescPadding(),
                 "Examples:\n" +
-                        "  congress-cli --operation list-chambers --config gradle.properties\n" +
-                        "  congress-cli --operation list-members --chamber house --format pretty --config gradle.properties\n" +
+                        "  congress-cli --operation list-chambers --key-file gradle.properties\n" +
+                        "  congress-cli --operation list-members --chamber house --format pretty --key-file gradle.properties\n" +
                         "  congress-cli --operation member-details --memberId A000360 --format json",
                 true
         );
@@ -374,11 +374,11 @@ public final class CongressCli {
                 .desc("Operation to run: list-chambers, list-members, or member-details")
                 .required()
                 .build());
-        options.addOption(Option.builder("c")
-                .longOpt("config")
+        options.addOption(Option.builder("k")
+                .longOpt("key-file")
                 .hasArg()
                 .argName("file")
-                .desc("Path to properties file containing API_CONGRESS_GOV_KEY (defaults to gradle.properties)")
+                .desc("Path to properties file that provides API_CONGRESS_GOV_KEY (defaults to gradle.properties)")
                 .build());
         options.addOption(Option.builder()
                 .longOpt("chamber")
@@ -409,6 +409,15 @@ public final class CongressCli {
                 .desc("Prints usage information")
                 .build());
         return options;
+    }
+
+    private boolean hasHelpFlag(String[] args) {
+        for (String arg : args) {
+            if ("-h".equals(arg) || "--help".equals(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private enum Operation {
