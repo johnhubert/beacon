@@ -4,6 +4,7 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 plugins {
+    base
     id("org.springframework.boot") version "3.5.7" apply false
     id("io.spring.dependency-management") version "1.1.7" apply false
     id("com.google.protobuf") version "0.9.4" apply false
@@ -27,4 +28,12 @@ subprojects {
     tasks.withType(Test::class.java).configureEach {
         useJUnitPlatform()
     }
+}
+
+tasks.register("buildTools") {
+    dependsOn(":tools:congress-cli:assembleToolDistribution")
+}
+
+tasks.named("build") {
+    dependsOn("buildTools")
 }
