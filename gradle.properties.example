@@ -1,0 +1,8 @@
+# Copy this file to gradle.properties and replace the placeholder values.
+# API keys are never checked into source control.
+
+# Congress.gov API key used by integration tests and CLI tools.
+API_CONGRESS_GOV_KEY=replace-with-your-api-key
+
+# Optional: override the default Congress number (e.g. 118)
+# CONGRESS_NUMBER=118

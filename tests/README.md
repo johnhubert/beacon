@@ -15,9 +15,10 @@ response into our shared protobuf models via `common:congress-client`. The suite
 
 ### Prerequisites
 
-- A valid Congress.gov API key (free via api.data.gov). Either export it as an environment variable,
-  place it in the root `gradle.properties` (`API_CONGRESS_GOV_KEY=...`), or pass it as a Gradle
-  property when invoking the task.
+- A valid Congress.gov API key (free via api.data.gov). Copy `gradle.properties.example` from the
+  repo root to `gradle.properties` and insert your key (`API_CONGRESS_GOV_KEY=...`). The file is
+  `.gitignore`d to prevent accidental commits. You may also export the key as an environment
+  variable or pass it inline when invoking Gradle.
 - Network access to `https://api.congress.gov`.
 - Optional: override the congress session under test via `-PCONGRESS_NUMBER=118`.
 
