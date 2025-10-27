@@ -1,3 +1,4 @@
+import org.gradle.api.GradleException
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.testing.Test
@@ -30,10 +31,22 @@ subprojects {
     }
 }
 
-tasks.register("buildTools") {
-    dependsOn(":tools:congress-cli:assembleToolDistribution")
-}
+val congressCliAvailable = file("tools/congress-cli").isDirectory
 
-tasks.named("build") {
-    dependsOn("buildTools")
+if (congressCliAvailable) {
+    val buildTools = tasks.register("buildTools") {
+        dependsOn(":tools:congress-cli:assembleToolDistribution")
+    }
+
+    tasks.named("build") {
+        dependsOn(buildTools)
+    }
+} else {
+    tasks.register("buildTools") {
+        group = "build"
+        description = "Builds the congress CLI distribution when the tools/congress-cli module is available."
+        doLast {
+            throw GradleException("The tools/congress-cli module is not available in this environment.")
+        }
+    }
 }
