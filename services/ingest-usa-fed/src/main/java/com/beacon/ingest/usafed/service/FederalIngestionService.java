@@ -12,9 +12,12 @@ import com.beacon.common.accountability.v1.VotePosition;
 import com.beacon.common.accountability.v1.VotingRecord;
 import com.beacon.ingest.usafed.config.CongressApiProperties;
 import com.beacon.ingest.usafed.publisher.AccountabilityEventPublisher;
+import com.beacon.stateful.mongo.LegislativeBodyRepository;
+import com.beacon.stateful.mongo.PublicOfficialRepository;
 import com.google.protobuf.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,17 +30,44 @@ public class FederalIngestionService {
 
     private final AccountabilityEventPublisher publisher;
     private final CongressApiProperties properties;
+    private final PublicOfficialRepository publicOfficialRepository;
+    private final LegislativeBodyRepository legislativeBodyRepository;
 
-    public FederalIngestionService(AccountabilityEventPublisher publisher, CongressApiProperties properties) {
+    public FederalIngestionService(
+            AccountabilityEventPublisher publisher,
+            CongressApiProperties properties,
+            Optional<PublicOfficialRepository> publicOfficialRepository,
+            Optional<LegislativeBodyRepository> legislativeBodyRepository) {
         this.publisher = publisher;
         this.properties = properties;
+        this.publicOfficialRepository = publicOfficialRepository.orElse(null);
+        this.legislativeBodyRepository = legislativeBodyRepository.orElse(null);
     }
 
     public void ingestLatestSnapshots() {
         // TODO: Replace placeholder with Congress.gov delta polling + LegiScan integrations per ingestion_plan.md.
         LOGGER.info("Polling {} for latest federal activity (placeholder)", properties.baseUrl());
         OfficialAccountabilityEvent placeholderEvent = buildPlaceholderEvent();
+        persistSnapshotState(placeholderEvent);
         publisher.publish(placeholderEvent);
+    }
+
+    private void persistSnapshotState(OfficialAccountabilityEvent event) {
+        if (publicOfficialRepository == null || legislativeBodyRepository == null) {
+            LOGGER.debug("Mongo repositories unavailable; skipping stateful persistence");
+            return;
+        }
+
+        legislativeBodyRepository.upsert(event.getLegislativeBody());
+
+        if (publicOfficialRepository.existsBySourceId(event.getPublicOfficial().getSourceId())) {
+            publicOfficialRepository.updateOfficial(event.getPublicOfficial());
+        } else {
+            publicOfficialRepository.addOfficial(event.getPublicOfficial());
+        }
+
+        long totalOfficialsForBody = publicOfficialRepository.countByLegislativeBody(event.getPublicOfficial().getLegislativeBodyUuid());
+        LOGGER.info("{} officials stored for {}", totalOfficialsForBody, event.getLegislativeBody().getName());
     }
 
     private OfficialAccountabilityEvent buildPlaceholderEvent() {

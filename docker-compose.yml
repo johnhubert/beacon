@@ -1,7 +1,7 @@
 services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: beacon-kafka
+    container_name: kafka
     ports:
       - "9092:9092"
     environment:
@@ -26,10 +26,24 @@ services:
       retries: 8
     restart: unless-stopped
 
+  mongo:
+    image: mongo:7.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./ui/react-native
-    container_name: beacon-frontend
+    container_name: frontend
     ports:
       - "3000:3000"
     healthcheck:
@@ -43,7 +57,7 @@ services:
     build:
       context: .
       dockerfile: backend/rest-service/Dockerfile
-    container_name: beacon-rest
+    container_name: rest
     environment:
       - JAVA_OPTS=
     ports:
@@ -54,7 +68,7 @@ services:
     build:
       context: .
       dockerfile: backend/sse-service/Dockerfile
-    container_name: beacon-sse
+    container_name: sse
     environment:
       - JAVA_OPTS=
     ports:
@@ -63,7 +77,7 @@ services:
 
   nginx:
     image: nginx:1.25-alpine
-    container_name: beacon-nginx
+    container_name: nginx
     depends_on:
       - frontend
       - rest
@@ -88,4 +102,10 @@ services:
       - CONGRESS_API_KEY=${CONGRESS_API_KEY:-demo-api-key}
       - CONGRESS_POLL_INTERVAL=PT5M
       - CONGRESS_DEFAULT_CHAMBER=Senate
+      - STATEFUL_MONGO_HOST=mongo
+      - STATEFUL_MONGO_PORT=27017
+      - STATEFUL_MONGO_DATABASE=accountability_stateful
     restart: unless-stopped
+
+volumes:
+  mongo-data:
