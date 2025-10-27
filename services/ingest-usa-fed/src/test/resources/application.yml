@@ -1,0 +1,3 @@
+stateful:
+  mongo:
+    enabled: false

@@ -9,6 +9,8 @@ dist/
 **/build/
 .gradle/
 *.log
+gradle.properties
+gradle-local.properties
 
 # OS / IDE
 .DS_Store
