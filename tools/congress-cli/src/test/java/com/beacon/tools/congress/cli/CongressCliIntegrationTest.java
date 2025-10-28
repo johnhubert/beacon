@@ -97,6 +97,26 @@ class CongressCliIntegrationTest {
     }
 
     @Test
+    @DisplayName("list-members house with current=false returns expanded roster")
+    void listMembersHouseCurrentFalse() {
+        CliResult result = runCli(withKeyFile("-o", "list-members", "--chamber", "house", "--current", "false"));
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.stdout()).contains("Total records:");
+        assertThat(extractRecordCount(result.stdout())).isGreaterThan(435);
+    }
+
+    @Test
+    @DisplayName("list-members house filtered by last-years returns recent entries")
+    void listMembersHouseLastYears() {
+        CliResult result = runCli(withKeyFile("-o", "list-members", "--chamber", "house", "--last-years", "2"));
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.stdout()).contains("Total records:");
+        assertThat(extractRecordCount(result.stdout())).isGreaterThan(0);
+    }
+
+    @Test
     @DisplayName("list-members senate pretty output includes approximately 100 entries")
     void listMembersSenatePretty() {
         CliResult result = runCli(withKeyFile("-o", "list-members", "--chamber", "upper"));
@@ -104,6 +124,15 @@ class CongressCliIntegrationTest {
         assertThat(result.exitCode()).isZero();
         assertThat(result.stdout()).contains("Total records:");
         assertThat(extractRecordCount(result.stdout())).isGreaterThanOrEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("list-members senate pretty with show-url prints request URL")
+    void listMembersSenatePrettyShowUrl() {
+        CliResult result = runCli(withKeyFile("-o", "list-members", "--chamber", "upper", "--show-url"));
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.stdout()).contains("Request URL:");
     }
 
     @Test
