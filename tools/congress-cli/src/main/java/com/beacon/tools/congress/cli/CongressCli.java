@@ -212,6 +212,7 @@ public final class CongressCli {
                 ));
             }
             out.println(renderer.render());
+            out.printf("Total records: %d%n", bodies.size());
         }
         return 0;
     }
@@ -259,6 +260,7 @@ public final class CongressCli {
                 ));
             }
             out.println(renderer.render());
+            out.printf("Total records: %d%n", officials.size());
         }
         return 0;
     }

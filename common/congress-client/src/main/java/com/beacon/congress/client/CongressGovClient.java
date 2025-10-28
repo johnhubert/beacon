@@ -127,7 +127,7 @@ public final class CongressGovClient {
     public List<PublicOfficial> fetchMembers(int congressNumber, ChamberType chamberFilter) {
         Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber);
         return getMembersForCongress(congressNumber).stream()
-                .filter(record -> chamberFilter == null || record.chamberType() == chamberFilter)
+                .filter(record -> chamberFilter == null || chamberFilter == ChamberType.CHAMBER_TYPE_UNSPECIFIED || record.chamberType() == chamberFilter)
                 .map(record -> toPublicOfficial(record, bodies.get(record.chamberType())))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
@@ -136,7 +136,7 @@ public final class CongressGovClient {
     public List<MemberListing> fetchMemberListings(int congressNumber, ChamberType chamberFilter) {
         Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber);
         return getMembersForCongress(congressNumber).stream()
-                .filter(record -> chamberFilter == null || record.chamberType() == chamberFilter)
+                .filter(record -> chamberFilter == null || chamberFilter == ChamberType.CHAMBER_TYPE_UNSPECIFIED || record.chamberType() == chamberFilter)
                 .map(record -> {
                     LegislativeBody body = bodies.get(record.chamberType());
                     PublicOfficial official = toPublicOfficial(record, body);
@@ -381,7 +381,8 @@ public final class CongressGovClient {
                 LOGGER.info("Slow Congress.gov request: {} {} ms", uri.getPath(), elapsedMillis);
             }
             if (response.statusCode() >= 400) {
-                throw new CongressGovClientException("Congress.gov request failed with status " + response.statusCode());
+                throw new CongressGovClientException(
+                        "Congress.gov request failed with status %d for %s".formatted(response.statusCode(), uri));
             }
             return mapper.readTree(response.body());
         } catch (IOException e) {
