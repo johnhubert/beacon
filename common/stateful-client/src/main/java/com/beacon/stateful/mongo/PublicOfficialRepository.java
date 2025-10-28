@@ -1,5 +1,7 @@
 package com.beacon.stateful.mongo;
 
+import java.time.Instant;
+import java.util.Date;
 import java.util.Optional;
 
 import com.beacon.common.accountability.v1.PublicOfficial;
@@ -11,6 +13,7 @@ import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
@@ -54,7 +57,7 @@ public class PublicOfficialRepository {
     public Optional<OfficialMetadata> findMetadataBySourceId(String sourceId) {
         Document document = collection
                 .find(Filters.eq("source_id", sourceId))
-                .projection(Projections.include("_id", "version_hash"))
+                .projection(Projections.include("_id", "version_hash", "last_refreshed_at"))
                 .first();
         if (document == null) {
             return Optional.empty();
@@ -62,7 +65,9 @@ public class PublicOfficialRepository {
         Object idValue = document.get("_id");
         String uuid = idValue instanceof String ? (String) idValue : idValue != null ? idValue.toString() : null;
         String versionHash = document.getString("version_hash");
-        return Optional.of(new OfficialMetadata(uuid, versionHash));
+        Date lastRefreshed = document.getDate("last_refreshed_at");
+        Instant refreshedAt = lastRefreshed == null ? null : lastRefreshed.toInstant();
+        return Optional.of(new OfficialMetadata(uuid, versionHash, refreshedAt));
     }
 
     public boolean deleteBySourceId(String sourceId) {
@@ -74,5 +79,18 @@ public class PublicOfficialRepository {
         return collection.countDocuments(Filters.eq("legislative_body_uuid", legislativeBodyUuid));
     }
 
-    public record OfficialMetadata(String uuid, String versionHash) {}
+    public Optional<Instant> findLatestRefreshTimestamp(String legislativeBodyUuid) {
+        Document document = collection.find(Filters.eq("legislative_body_uuid", legislativeBodyUuid))
+                .projection(Projections.include("last_refreshed_at"))
+                .sort(Sorts.descending("last_refreshed_at"))
+                .limit(1)
+                .first();
+        if (document == null) {
+            return Optional.empty();
+        }
+        Date date = document.getDate("last_refreshed_at");
+        return date == null ? Optional.empty() : Optional.of(date.toInstant());
+    }
+
+    public record OfficialMetadata(String uuid, String versionHash, Instant lastRefreshedAt) {}
 }

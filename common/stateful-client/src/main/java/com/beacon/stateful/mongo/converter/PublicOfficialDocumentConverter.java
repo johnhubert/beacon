@@ -32,6 +32,8 @@ public final class PublicOfficialDocumentConverter {
                 .ifPresent(date -> document.append("term_start_date", date));
         ProtoTimestampConverter.toDate(official.hasTermEndDate() ? official.getTermEndDate() : Timestamp.getDefaultInstance())
                 .ifPresent(date -> document.append("term_end_date", date));
+        ProtoTimestampConverter.toDate(official.hasLastRefreshedAt() ? official.getLastRefreshedAt() : Timestamp.getDefaultInstance())
+                .ifPresent(date -> document.append("last_refreshed_at", date));
 
         return document;
     }
@@ -57,6 +59,7 @@ public final class PublicOfficialDocumentConverter {
 
         ProtoTimestampConverter.toTimestamp(document.getDate("term_start_date")).ifPresent(builder::setTermStartDate);
         ProtoTimestampConverter.toTimestamp(document.getDate("term_end_date")).ifPresent(builder::setTermEndDate);
+        ProtoTimestampConverter.toTimestamp(document.getDate("last_refreshed_at")).ifPresent(builder::setLastRefreshedAt);
 
         return builder.build();
     }
