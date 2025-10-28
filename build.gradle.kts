@@ -50,3 +50,21 @@ if (congressCliAvailable) {
         }
     }
 }
+
+tasks.register("prepareDockerEnv") {
+    group = "docker"
+    description = "Generates environment variables for docker-compose from gradle.properties."
+    doLast {
+        val apiKey = findProperty("API_CONGRESS_GOV_KEY")?.toString()?.takeIf { it.isNotBlank() }
+                ?: throw GradleException("API_CONGRESS_GOV_KEY is not set. Add it to gradle.properties to run docker-compose.")
+
+        val outputFile = layout.projectDirectory.file("build/docker/ingest-usa-fed.env").asFile
+        outputFile.parentFile.mkdirs()
+        val content = buildString {
+            appendLine("CONGRESS_API_KEY=$apiKey")
+            appendLine("API_CONGRESS_GOV_KEY=$apiKey")
+        }
+        outputFile.writeText(content)
+        logger.lifecycle("Wrote docker-compose env file to ${outputFile.relativeTo(layout.projectDirectory.asFile)}")
+    }
+}

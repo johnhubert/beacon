@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -128,6 +129,22 @@ public final class CongressGovClient {
         return getMembersForCongress(congressNumber).stream()
                 .filter(record -> chamberFilter == null || record.chamberType() == chamberFilter)
                 .map(record -> toPublicOfficial(record, bodies.get(record.chamberType())))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    public List<MemberListing> fetchMemberListings(int congressNumber, ChamberType chamberFilter) {
+        Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber);
+        return getMembersForCongress(congressNumber).stream()
+                .filter(record -> chamberFilter == null || record.chamberType() == chamberFilter)
+                .map(record -> {
+                    LegislativeBody body = bodies.get(record.chamberType());
+                    PublicOfficial official = toPublicOfficial(record, body);
+                    if (official == null) {
+                        return null;
+                    }
+                    return new MemberListing(official, body, record.rawJson());
+                })
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
@@ -263,7 +280,8 @@ public final class CongressGovClient {
                 detailUrl,
                 chamberType,
                 termStart,
-                stateCode
+                stateCode,
+                memberNode.toString()
         );
         return Optional.of(record);
     }
@@ -356,7 +374,12 @@ public final class CongressGovClient {
                 .header("Accept", "application/json")
                 .build();
         try {
+            Instant start = Instant.now();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long elapsedMillis = Duration.between(start, Instant.now()).toMillis();
+            if (elapsedMillis > 1000) {
+                LOGGER.info("Slow Congress.gov request: {} {} ms", uri.getPath(), elapsedMillis);
+            }
             if (response.statusCode() >= 400) {
                 throw new CongressGovClientException("Congress.gov request failed with status " + response.statusCode());
             }
@@ -511,6 +534,11 @@ public final class CongressGovClient {
                 .build();
     }
 
+    public record MemberListing(
+            PublicOfficial publicOfficial,
+            LegislativeBody legislativeBody,
+            String sourceJson) {}
+
     private record MemberRecord(
             String bioguideId,
             String name,
@@ -521,5 +549,6 @@ public final class CongressGovClient {
             String detailUrl,
             ChamberType chamberType,
             Instant termStart,
-            String stateCode) {}
+            String stateCode,
+            String rawJson) {}
 }

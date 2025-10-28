@@ -14,7 +14,8 @@
 
 ## Workstream B – Source Collector Microservice
 - [x] Scaffold a Spring Boot (or preferred JVM) service that authenticates against the selected federal site, runs scheduled scrapes/pulls, and emits protobuf `OfficialAccountabilityEvent` messages.
-- [ ] Implement normalization + deduplication rules to ensure each record maps cleanly to the unified schema; drop or quarantine malformed payloads with visibility in logs/metrics.
+- [x] Implement normalization + deduplication rules to ensure each record maps cleanly to the unified schema; drop or quarantine malformed payloads with visibility in logs/metrics.
+  - Hourly roster job now refreshes both chambers via Congress.gov, hashes the raw payload for change detection, protects concurrent runs with a Redis NX lock, and upserts officials + hashes into Mongo.
 - [ ] Package the service with structured logging, health checks, and lightweight metrics (fetch counts, failures, latency) to inform observability from day one.
 
 ## Workstream C – Kafka Backbone

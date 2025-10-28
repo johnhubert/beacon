@@ -4,6 +4,8 @@ import com.beacon.ingest.usafed.config.CongressApiProperties;
 import com.beacon.ingest.usafed.service.FederalIngestionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -20,9 +22,17 @@ public class FederalIngestionScheduler {
         this.properties = properties;
     }
 
-    @Scheduled(fixedDelayString = "${beacon.congress.poll-interval:PT5M}")
-    public void pollCongressFeeds() {
-        LOGGER.debug("Triggering ingest cycle for {}", properties.baseUrl());
-        ingestionService.ingestLatestSnapshots();
+    @EventListener(ApplicationReadyEvent.class)
+    public void triggerOnStartup() {
+        LOGGER.info("Starting initial congressional roster refresh");
+        ingestionService.refreshCongressRoster();
+    }
+
+    @Scheduled(
+            fixedDelayString = "${beacon.congress.poll-interval:PT1H}",
+            initialDelayString = "${beacon.congress.poll-interval:PT1H}")
+    public void refreshCongressRoster() {
+        LOGGER.debug("Triggering scheduled roster refresh for {}", properties.baseUrl());
+        ingestionService.refreshCongressRoster();
     }
 }

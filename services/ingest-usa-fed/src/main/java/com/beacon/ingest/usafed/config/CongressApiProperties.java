@@ -9,6 +9,7 @@ public record CongressApiProperties(
         URI baseUrl,
         String apiKey,
         Duration pollInterval,
-        String chamber)
+        String chamber,
+        int congressNumber)
 {
 }

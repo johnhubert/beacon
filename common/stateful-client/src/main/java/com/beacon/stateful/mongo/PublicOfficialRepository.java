@@ -1,5 +1,7 @@
 package com.beacon.stateful.mongo;
 
+import java.util.Optional;
+
 import com.beacon.common.accountability.v1.PublicOfficial;
 import com.beacon.stateful.mongo.converter.PublicOfficialDocumentConverter;
 import com.mongodb.client.MongoCollection;
@@ -7,6 +9,7 @@ import com.mongodb.client.model.CountOptions;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.InsertOneResult;
@@ -48,6 +51,20 @@ public class PublicOfficialRepository {
         collection.replaceOne(Filters.eq("source_id", official.getSourceId()), document, new ReplaceOptions().upsert(true));
     }
 
+    public Optional<OfficialMetadata> findMetadataBySourceId(String sourceId) {
+        Document document = collection
+                .find(Filters.eq("source_id", sourceId))
+                .projection(Projections.include("_id", "version_hash"))
+                .first();
+        if (document == null) {
+            return Optional.empty();
+        }
+        Object idValue = document.get("_id");
+        String uuid = idValue instanceof String ? (String) idValue : idValue != null ? idValue.toString() : null;
+        String versionHash = document.getString("version_hash");
+        return Optional.of(new OfficialMetadata(uuid, versionHash));
+    }
+
     public boolean deleteBySourceId(String sourceId) {
         DeleteResult result = collection.deleteOne(Filters.eq("source_id", sourceId));
         return result.getDeletedCount() > 0;
@@ -56,4 +73,6 @@ public class PublicOfficialRepository {
     public long countByLegislativeBody(String legislativeBodyUuid) {
         return collection.countDocuments(Filters.eq("legislative_body_uuid", legislativeBodyUuid));
     }
+
+    public record OfficialMetadata(String uuid, String versionHash) {}
 }

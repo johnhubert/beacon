@@ -25,7 +25,8 @@ public final class PublicOfficialDocumentConverter {
                 .append("district_identifier", official.getDistrictIdentifier())
                 .append("office_status", official.getOfficeStatus().name())
                 .append("biography_url", official.getBiographyUrl())
-                .append("photo_url", official.getPhotoUrl());
+                .append("photo_url", official.getPhotoUrl())
+                .append("version_hash", official.getVersionHash());
 
         ProtoTimestampConverter.toDate(official.hasTermStartDate() ? official.getTermStartDate() : Timestamp.getDefaultInstance())
                 .ifPresent(date -> document.append("term_start_date", date));
@@ -48,6 +49,11 @@ public final class PublicOfficialDocumentConverter {
                 .setOfficeStatus(OfficeStatus.valueOf(document.getString("office_status")))
                 .setBiographyUrl(document.getString("biography_url"))
                 .setPhotoUrl(document.getString("photo_url"));
+
+        String versionHash = document.getString("version_hash");
+        if (versionHash != null) {
+            builder.setVersionHash(versionHash);
+        }
 
         ProtoTimestampConverter.toTimestamp(document.getDate("term_start_date")).ifPresent(builder::setTermStartDate);
         ProtoTimestampConverter.toTimestamp(document.getDate("term_end_date")).ifPresent(builder::setTermEndDate);

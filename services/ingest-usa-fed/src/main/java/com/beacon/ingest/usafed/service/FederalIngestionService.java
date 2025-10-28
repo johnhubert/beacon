@@ -1,146 +1,223 @@
 package com.beacon.ingest.usafed.service;
 
-import com.beacon.common.accountability.v1.AccountabilityMetric;
-import com.beacon.common.accountability.v1.ChamberType;
-import com.beacon.common.accountability.v1.JurisdictionType;
 import com.beacon.common.accountability.v1.LegislativeBody;
-import com.beacon.common.accountability.v1.MemberVote;
 import com.beacon.common.accountability.v1.OfficialAccountabilityEvent;
-import com.beacon.common.accountability.v1.OfficeStatus;
 import com.beacon.common.accountability.v1.PublicOfficial;
-import com.beacon.common.accountability.v1.VotePosition;
-import com.beacon.common.accountability.v1.VotingRecord;
+import com.beacon.congress.client.CongressGovClient;
+import com.beacon.congress.client.CongressGovClient.MemberListing;
+import com.beacon.congress.client.CongressGovClientException;
 import com.beacon.ingest.usafed.config.CongressApiProperties;
 import com.beacon.ingest.usafed.publisher.AccountabilityEventPublisher;
 import com.beacon.stateful.mongo.LegislativeBodyRepository;
 import com.beacon.stateful.mongo.PublicOfficialRepository;
+import com.beacon.stateful.mongo.PublicOfficialRepository.OfficialMetadata;
 import com.google.protobuf.Timestamp;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
 public class FederalIngestionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FederalIngestionService.class);
+    private static final String ROSTER_REFRESH_LOCK_KEY = "ingest-usa-fed:congress:roster-refresh";
+    private static final Duration ROSTER_LOCK_TTL = Duration.ofMinutes(55);
+    private static final HexFormat HEX_FORMAT = HexFormat.of();
+    private static final String INGESTION_SOURCE = "congress.gov";
 
     private final AccountabilityEventPublisher publisher;
     private final CongressApiProperties properties;
     private final PublicOfficialRepository publicOfficialRepository;
     private final LegislativeBodyRepository legislativeBodyRepository;
+    private final CongressGovClient congressGovClient;
+    private final StringRedisTemplate redisTemplate;
 
     public FederalIngestionService(
             AccountabilityEventPublisher publisher,
             CongressApiProperties properties,
+            CongressGovClient congressGovClient,
+            StringRedisTemplate redisTemplate,
             Optional<PublicOfficialRepository> publicOfficialRepository,
             Optional<LegislativeBodyRepository> legislativeBodyRepository) {
         this.publisher = publisher;
         this.properties = properties;
+        this.congressGovClient = congressGovClient;
+        this.redisTemplate = redisTemplate;
         this.publicOfficialRepository = publicOfficialRepository.orElse(null);
         this.legislativeBodyRepository = legislativeBodyRepository.orElse(null);
     }
 
-    public void ingestLatestSnapshots() {
-        // TODO: Replace placeholder with Congress.gov delta polling + LegiScan integrations per ingestion_plan.md.
-        LOGGER.info("Polling {} for latest federal activity (placeholder)", properties.baseUrl());
-        OfficialAccountabilityEvent placeholderEvent = buildPlaceholderEvent();
-        persistSnapshotState(placeholderEvent);
-        publisher.publish(placeholderEvent);
-    }
-
-    private void persistSnapshotState(OfficialAccountabilityEvent event) {
+    public void refreshCongressRoster() {
         if (publicOfficialRepository == null || legislativeBodyRepository == null) {
-            LOGGER.debug("Mongo repositories unavailable; skipping stateful persistence");
+            LOGGER.warn("Mongo repositories unavailable; skipping roster refresh");
+            return;
+        }
+        if (redisTemplate == null) {
+            LOGGER.warn("Redis template unavailable; skipping roster refresh");
+            return;
+        }
+        String lockValue = UUID.randomUUID().toString();
+        if (!acquireLock(lockValue)) {
+            LOGGER.debug("Another instance is already refreshing the congressional roster; skipping run");
             return;
         }
 
-        legislativeBodyRepository.upsert(event.getLegislativeBody());
+        Instant start = Instant.now();
+        LOGGER.info("Refreshing congressional roster for {}th Congress", properties.congressNumber());
+        int totalProcessed = 0;
+        int totalInserts = 0;
+        int totalUpdates = 0;
 
-        if (publicOfficialRepository.existsBySourceId(event.getPublicOfficial().getSourceId())) {
-            publicOfficialRepository.updateOfficial(event.getPublicOfficial());
-        } else {
-            publicOfficialRepository.addOfficial(event.getPublicOfficial());
+        try {
+            List<LegislativeBody> bodies = congressGovClient.fetchLegislativeBodies(properties.congressNumber());
+            for (LegislativeBody body : bodies) {
+                legislativeBodyRepository.upsert(body);
+                List<MemberListing> listings = congressGovClient.fetchMemberListings(properties.congressNumber(), body.getChamberType());
+                RefreshStats stats = synchronizeBody(body, listings);
+                totalProcessed += stats.scanned();
+                totalInserts += stats.inserted();
+                totalUpdates += stats.updated();
+                long storedCount = publicOfficialRepository.countByLegislativeBody(body.getUuid());
+                LOGGER.info(
+                        "Refreshed {} members for {} ({} inserts, {} updates, {} total stored)",
+                        stats.scanned(),
+                        body.getName(),
+                        stats.inserted(),
+                        stats.updated(),
+                        storedCount);
+            }
+            Duration elapsed = Duration.between(start, Instant.now());
+            LOGGER.info(
+                    "Roster refresh complete: {} members processed, {} inserts, {} updates in {} ms",
+                    totalProcessed,
+                    totalInserts,
+                    totalUpdates,
+                    elapsed.toMillis());
+        } catch (CongressGovClientException ex) {
+            LOGGER.warn(
+                    "Congress.gov roster refresh skipped: {}. Verify CONGRESS_API_KEY or network access before retrying.",
+                    ex.getMessage());
+        } catch (Exception ex) {
+            LOGGER.error("Failed to refresh congressional roster", ex);
+        } finally {
+            releaseLock(lockValue);
         }
-
-        long totalOfficialsForBody = publicOfficialRepository.countByLegislativeBody(event.getPublicOfficial().getLegislativeBodyUuid());
-        LOGGER.info("{} officials stored for {}", totalOfficialsForBody, event.getLegislativeBody().getName());
     }
 
-    private OfficialAccountabilityEvent buildPlaceholderEvent() {
-        Instant now = Instant.now();
-        String legislativeBodyUuid = UUID.randomUUID().toString();
-        String publicOfficialUuid = UUID.randomUUID().toString();
-        String votingRecordUuid = UUID.randomUUID().toString();
+    private RefreshStats synchronizeBody(LegislativeBody body, List<MemberListing> listings) {
+        int scanned = 0;
+        int inserts = 0;
+        int updates = 0;
 
-        LegislativeBody legislativeBody = LegislativeBody.newBuilder()
-                .setUuid(legislativeBodyUuid)
-                .setSourceId("US-SENATE-118")
-                .setJurisdictionType(JurisdictionType.FEDERAL)
-                .setJurisdictionCode("US")
-                .setName("U.S. Senate")
-                .setChamberType(ChamberType.UPPER)
-                .setSession("118")
-                .build();
+        for (MemberListing listing : listings) {
+            scanned++;
+            PublicOfficial official = listing.publicOfficial();
+            String versionHash = computeVersionHash(listing.sourceJson());
+            Optional<OfficialMetadata> existingMetadata = publicOfficialRepository.findMetadataBySourceId(official.getSourceId());
+            if (existingMetadata.isPresent() && Objects.equals(existingMetadata.get().versionHash(), versionHash)) {
+                continue;
+            }
 
-        PublicOfficial publicOfficial = PublicOfficial.newBuilder()
-                .setUuid(publicOfficialUuid)
-                .setSourceId("S000033")
-                .setLegislativeBodyUuid(legislativeBodyUuid)
-                .setFullName("Placeholder Senator")
-                .setPartyAffiliation("I")
-                .setRoleTitle("Senator")
-                .setJurisdictionRegionCode("ME")
-                .setDistrictIdentifier("At-large")
-                .setTermStartDate(toTimestamp(now.minus(Duration.ofDays(730))))
-                .setOfficeStatus(OfficeStatus.ACTIVE)
-                .setPhotoUrl("https://placehold.co/128x128")
-                .build();
+            PublicOfficial.Builder builder = official.toBuilder()
+                    .setVersionHash(versionHash)
+                    .clearUuid();
 
-        MemberVote memberVote = MemberVote.newBuilder()
-                .setUuid(UUID.randomUUID().toString())
-                .setSourceId("S000033-RC_118_12")
-                .setOfficialUuid(publicOfficialUuid)
-                .setVotingRecordUuid(votingRecordUuid)
-                .setVotePosition(VotePosition.YEA)
-                .setGroupPosition("Independent")
-                .build();
+            existingMetadata
+                    .map(OfficialMetadata::uuid)
+                    .filter(uuid -> uuid != null && !uuid.isBlank())
+                    .ifPresentOrElse(
+                            builder::setUuid,
+                            () -> builder.setUuid(official.getUuid()));
 
-        VotingRecord votingRecord = VotingRecord.newBuilder()
-                .setUuid(votingRecordUuid)
-                .setSourceId("118-2-12")
-                .setLegislativeBodyUuid(legislativeBodyUuid)
-                .setVoteDateUtc(toTimestamp(now.minusSeconds(3600)))
-                .setSubjectSummary("Concurrent resolution placeholder")
-                .setBillReference("S.CON.RES.5")
-                .setBillUri("https://www.congress.gov/concurrent-resolutions")
-                .setRollCallReference("RC_118_12")
-                .addMemberVotes(memberVote)
-                .build();
+            if (existingMetadata.isPresent()
+                    && existingMetadata.get().uuid() != null
+                    && !existingMetadata.get().uuid().equals(official.getUuid())) {
+                LOGGER.debug(
+                        "Preserving persisted UUID {} for official {} (computed uuid was {})",
+                        existingMetadata.get().uuid(),
+                        official.getSourceId(),
+                        official.getUuid());
+            }
 
-        AccountabilityMetric accountabilityMetric = AccountabilityMetric.newBuilder()
-                .setUuid("alignment-placeholder")
-                .setSourceId("alignment-v1")
-                .setName("Statement vs Action Alignment")
-                .setScore(0.82)
-                .setMethodologyVersion("v1-alpha")
-                .setDetails("Placeholder metric until scoring service is built")
-                .build();
+            PublicOfficial updated = builder.build();
+            publicOfficialRepository.upsertOfficial(updated);
+            publishRosterEvent(body, updated, existingMetadata.isPresent());
+            if (existingMetadata.isPresent()) {
+                updates++;
+            } else {
+                inserts++;
+            }
+        }
 
-        return OfficialAccountabilityEvent.newBuilder()
-                .setUuid(UUID.randomUUID().toString())
-                .setSourceId("congress.gov-placeholder")
-                .setCapturedAt(toTimestamp(now))
-                .setIngestionSource("congress.gov")
-                .setPartitionKey(buildPartitionKey(publicOfficialUuid))
-                .setLegislativeBody(legislativeBody)
-                .setPublicOfficial(publicOfficial)
-                .addVotingRecords(votingRecord)
-                .addAccountabilityMetrics(accountabilityMetric)
-                .build();
+        return new RefreshStats(scanned, inserts, updates);
+    }
+
+    private boolean acquireLock(String lockValue) {
+        try {
+            Boolean acquired = redisTemplate.opsForValue()
+                    .setIfAbsent(ROSTER_REFRESH_LOCK_KEY, lockValue, ROSTER_LOCK_TTL);
+            if (Boolean.TRUE.equals(acquired)) {
+                return true;
+            }
+            return false;
+        } catch (Exception ex) {
+            LOGGER.warn("Unable to acquire roster refresh lock, skipping run", ex);
+            return false;
+        }
+    }
+
+    private void releaseLock(String lockValue) {
+        try {
+            String current = redisTemplate.opsForValue().get(ROSTER_REFRESH_LOCK_KEY);
+            if (lockValue.equals(current)) {
+                redisTemplate.delete(ROSTER_REFRESH_LOCK_KEY);
+            }
+        } catch (Exception ex) {
+            LOGGER.warn("Unable to release roster refresh lock", ex);
+        }
+    }
+
+    private void publishRosterEvent(LegislativeBody body, PublicOfficial official, boolean existing) {
+        try {
+            OfficialAccountabilityEvent event = OfficialAccountabilityEvent.newBuilder()
+                    .setUuid(UUID.randomUUID().toString())
+                    .setSourceId("congress-roster-" + official.getSourceId())
+                    .setCapturedAt(toTimestamp(Instant.now()))
+                    .setIngestionSource(INGESTION_SOURCE)
+                    .setPartitionKey(buildPartitionKey(official.getUuid(), body))
+                    .setLegislativeBody(body)
+                    .setPublicOfficial(official)
+                    .build();
+            publisher.publish(event);
+            LOGGER.debug("Published roster {} event for {}", existing ? "update" : "insert", official.getSourceId());
+        } catch (Exception ex) {
+            LOGGER.warn("Failed to publish roster event for {}", official.getSourceId(), ex);
+        }
+    }
+
+    private String computeVersionHash(String payload) {
+        if (payload == null) {
+            return "";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] hash = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
+            return HEX_FORMAT.formatHex(hash);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("Unable to compute SHA-1 hash", ex);
+        }
     }
 
     private Timestamp toTimestamp(Instant instant) {
@@ -150,7 +227,10 @@ public class FederalIngestionService {
                 .build();
     }
 
-    private String buildPartitionKey(String officialUuid) {
-        return "%s::%s".formatted(officialUuid, properties.chamber().toLowerCase());
+    private String buildPartitionKey(String officialUuid, LegislativeBody body) {
+        String chamber = body.getChamberType().name().toLowerCase(Locale.ROOT);
+        return "%s::%s".formatted(officialUuid, chamber);
     }
+
+    private record RefreshStats(int scanned, int inserted, int updated) {}
 }
