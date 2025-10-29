@@ -12,7 +12,9 @@ if (congressCliDir.isDirectory) {
 }
 
 modules += listOf(
-    "backend:rest-service",
+    "common:auth",
+    "backend:rest-officials",
+    "backend:auth-service",
     "backend:sse-service",
     "services:ingest-usa-fed"
 )

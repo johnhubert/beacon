@@ -28,12 +28,14 @@
 ## Workstream D – Stateful Profile Store
 - [ ] Implement the `profile-store-service` consumer that reads protobuf events, upserts the matching Mongo document, and enforces “one document per official” semantics.
 - [ ] Persist computed accountability metrics (vote counts, agreement deltas, freshness timestamps) within the same document to keep the UI stateless.
-- [ ] Expose REST endpoints (search, list, detail) that the UI can call; keep responses aligned with the unified model to avoid custom mapping layers.
+- [x] Expose REST endpoints (search, list, detail) that the UI can call; keep responses aligned with the unified model to avoid custom mapping layers.
+  - `rest-officials` now surfaces list + detail endpoints; search filtering will follow once OpenSearch lands.
 - [ ] Add integration tests that spin up Kafka + Mongo containers, replay sample events, and assert resulting Mongo documents + HTTP responses.
 
 ## Workstream E – UI + Experience Surface
-- [ ] Extend the React Native experience with a list/detail view that surfaces name, office, term status, last votes, and accountability metrics.
+- [x] Extend the React Native experience with a list/detail view that surfaces name, office, term status, last votes, and accountability metrics.
 - [ ] Wire the UI to the new REST endpoints, add loading/error states, and capture basic analytics/telemetry for usage.
+  - API wiring and UX states are live; telemetry events remain to be instrumented.
 - [ ] Provide seeded data fixtures or a feature flag so designers/product can demo the experience without the live feed.
 
 ## Workstream F – Platform Controls

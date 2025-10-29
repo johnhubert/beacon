@@ -17,3 +17,7 @@ non-trivial functionality.
 # General Conventions
 
 NEVER check in any secrets, keys, etc
+For methods with anything more than a few lines of logic in them, always add comments describing the intent
+of the code within the method. This goes for both UI and backend code.
+Always add robust logging for exceptions, providing related context (e.g. urls used when an error code is enountered)
+Always support robust null handling to avoid exceptions due to unexpected empty responses, etc. Basically use defensive coding techniques in everything you write.

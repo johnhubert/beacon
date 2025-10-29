@@ -37,7 +37,8 @@ awareness and active civic life.
 
 - `ui/react-native/` &mdash; Expo React Native app that can run on devices via
   Expo Go or build to static web artifacts for nginx
-- `backend/rest-service/` &mdash; REST APIs consumed by the UI
+- `backend/rest-officials/` &mdash; REST APIs consumed by the UI
+- `backend/auth-service/` &mdash; Authentication endpoints that issue JWTs
 - `backend/sse-service/` &mdash; Server-Sent Events publisher streaming live data
 - `nginx.conf` &mdash; Gateway config that serves the UI and proxies `/api`
 - `docker-compose.yml` &mdash; Builds and runs the entire stack
@@ -78,14 +79,24 @@ Services:
 |----------|-------------|------------------------------------------|
 | nginx    | 8080        | http://localhost:8080 serves the UI      |
 | frontend | 3000        | Static build served via `serve`          |
-| REST API | 8081        | http://localhost:8081/api/health         |
+| rest-officials | 8081 | http://localhost:8081/api/officials      |
+| auth-service  | 8085 | http://localhost:8085/api/auth/demo       |
 | SSE API  | 8082        | http://localhost:8082/api/events (stream)|
 | mongo    | 27017       | Stores stateful public official data     |
+
+> Tip: the compose file defaults `BEACON_AUTH_JWT_SECRET` to `insecure-dev-secret`. Override this and other auth
+> environment variables by exporting them in your shell before running `docker compose up` (e.g.
+> `export BEACON_AUTH_JWT_SECRET=$(openssl rand -hex 32)`).
+
+During development you can enable username/password demo access by setting `BEACON_AUTH_DEV_MODE=true` (this is the
+default in `docker-compose.yml`). When disabled, the `/api/auth/demo` endpoint will return `403` and the mobile client
+will hide the demo login form.
 
 The nginx gateway handles:
 
 - `/` → React Native web bundle
-- `/api/**` → REST Spring Boot service
+- `/api/officials/**` → rest-officials microservice
+- `/api/auth/**` → auth-service microservice
 - `/api/events` → SSE Spring Boot service with 1 Hz heartbeats
 
 Kafka now runs in a single-node KRaft (ZooKeeper-free) mode. The broker auto-creates topics with 6 partitions (matching the old manual init step) the first time producers publish. If you need to reset state completely, run `docker compose down --volumes` to drop the embedded log directory and let the broker re-format itself on the next startup.
@@ -104,12 +115,16 @@ Kafka now runs in a single-node KRaft (ZooKeeper-free) mode. The broker auto-cre
 ```bash
 cd ui/react-native
 npm install
-export EXPO_PUBLIC_API_BASE_URL="http://localhost:8080"
+# When testing with Expo Go on a device or emulator, point to your LAN IP
+export EXPO_PUBLIC_API_BASE_URL="http://192.168.x.x:8080"  # replace with your machine's IP
 npm run start
 ```
 
-Use the QR code in the terminal with Expo Go on iOS/Android, or press `w` to
-launch the web preview. To share over your LAN, run `npm run start:lan`.
+`npm run start` binds Metro to your LAN IP so Expo Go on physical devices can connect
+to the API gateway through nginx. If you are using the iOS/Android emulators on the same
+machine, run `npm run start:local` and set `EXPO_PUBLIC_API_BASE_URL="http://localhost:8080"`
+to keep the host at `localhost`. For remote collaborators you can fall back to
+`npm run start:tunnel`. Press `w` in the terminal to launch the web preview.
 
 The production Docker image builds static web assets via `npm run build:web`
 (`expo export --platform web --output-dir dist`) and packages them with a lightweight HTTP
@@ -121,7 +136,7 @@ Each backend module is part of the shared Gradle build (Spring Boot 3.3 / JDK 21
 run them individually from the repo root, for example:
 
 ```bash
-./gradlew :backend:rest-service:bootRun
+./gradlew :backend:rest-officials:bootRun
 ```
 
 To build every module (including generated protobuf classes) run:
@@ -132,3 +147,57 @@ To build every module (including generated protobuf classes) run:
 
 Both services expose `/actuator/health` and are configured to match the
 container ports used by Docker Compose.
+
+### API documentation
+
+Springdoc-generated Swagger UIs are available once the services are running:
+
+| Service | Swagger UI | OpenAPI JSON |
+|---------|------------|--------------|
+| rest-officials | http://localhost:8081/swagger-ui/index.html | http://localhost:8081/v3/api-docs |
+  | auth-service | http://localhost:8085/swagger-ui/index.html | http://localhost:8085/v3/api-docs |
+  | sse-service | http://localhost:8082/swagger-ui/index.html | http://localhost:8082/v3/api-docs |
+
+### Google Sign-In setup for local development
+
+1. Create a Google Cloud project (https://console.cloud.google.com/), enable the **Google People API**, and open **APIs & Services → Credentials**.
+2. Create three OAuth 2.0 client IDs:
+   - **Web application** – add origins `http://localhost`, `http://localhost:3000`, `http://localhost:8080` (no trailing slash or path) and a redirect of the form `https://auth.expo.io/@your-expo-username/beacon-ui`. Replace `your-expo-username` with the account returned by `npx expo whoami` (use `expo login` first if needed). The redirect must not include a trailing slash.
+   - **Android** – use the package name `com.hd_johnny.beaconui`. For the debug SHA-1 you can run `keytool -list -v -alias androiddebugkey -keystore ~/.android/debug.keystore` (password `android`).
+   - **iOS** – use the bundle identifier `com.hd-johnny.beaconui`.
+3. Copy the generated client IDs (and the web client secret) into your local `gradle.properties` (git-ignored):
+   ```properties
+   BEACON_AUTH_GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+   BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID=your-android-client-id.apps.googleusercontent.com
+   BEACON_AUTH_GOOGLE_IOS_CLIENT_ID=your-ios-client-id.apps.googleusercontent.com
+   BEACON_AUTH_GOOGLE_CLIENT_SECRET=your-google-client-secret
+   BEACON_AUTH_JWT_SECRET=generate-a-long-random-string
+   BEACON_AUTH_DEV_MODE=true
+   ```
+4. Before running Docker compose, export the same values so the containers can read them:
+   ```bash
+   export BEACON_AUTH_GOOGLE_WEB_CLIENT_ID=$(grep BEACON_AUTH_GOOGLE_WEB_CLIENT_ID gradle.properties | cut -d'=' -f2)
+   export BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID=$(grep BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID gradle.properties | cut -d'=' -f2)
+   export BEACON_AUTH_GOOGLE_IOS_CLIENT_ID=$(grep BEACON_AUTH_GOOGLE_IOS_CLIENT_ID gradle.properties | cut -d'=' -f2)
+   export BEACON_AUTH_GOOGLE_CLIENT_SECRET=$(grep BEACON_AUTH_GOOGLE_CLIENT_SECRET gradle.properties | cut -d'=' -f2)
+   export BEACON_AUTH_JWT_SECRET=$(grep BEACON_AUTH_JWT_SECRET gradle.properties | cut -d'=' -f2)
+   export BEACON_AUTH_DEV_MODE=$(grep BEACON_AUTH_DEV_MODE gradle.properties | cut -d'=' -f2)
+   ```
+5. Start the stack with `docker compose up --build`. The React Native app will now display the Google sign-in button using the server-provided configuration while still allowing `demo/demo` credentials when `BEACON_AUTH_DEV_MODE=true`.
+   - When testing via **Expo Go**, the app uses the **web client ID** under the hood (regardless of device). Ensure the web client entry is configured even if you’re only validating on Android/iOS simulators.
+
+### JWT signing key management
+
+The auth service signs access tokens with the value provided in `BEACON_AUTH_JWT_SECRET`.
+
+1. Generate a strong secret locally (32+ random bytes encoded as hex):
+   ```bash
+   openssl rand -hex 32 > jwt-secret.txt
+   ```
+2. Add the value to `gradle.properties` **and make it available to docker-compose** (gradle properties are not read by Docker):
+   ```properties
+   BEACON_AUTH_JWT_SECRET=your-64-character-hex-secret
+   ```
+   Either export it in your shell (`export BEACON_AUTH_JWT_SECRET=$(cat jwt-secret.txt)`) or place it in a `.env` file that docker-compose can read.
+3. In production, store the secret in a managed vault (e.g. AWS Secrets Manager or SSM Parameter Store) and inject it into the container environment at deploy time. Never commit the secret to source control.
+4. If the variable is omitted, the service generates an ephemeral dev-only key on startup. This is convenient for quick demos, but tokens become invalid across restarts, so always configure a persistent secret for shared environments.

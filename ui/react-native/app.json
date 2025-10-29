@@ -9,11 +9,7 @@
       "policy": "sdkVersion"
     },
     "sdkVersion": "54.0.0",
-    "platforms": [
-      "ios",
-      "android",
-      "web"
-    ],
+    "platforms": ["ios", "android", "web"],
     "web": {
       "bundler": "metro",
       "output": "dist"
@@ -24,10 +20,8 @@
     "ios": {
       "bundleIdentifier": "com.hd-johnny.beaconui"
     },
-  "expo": {
     "experiments": {
       "newArchEnabled": false
     }
-  }
   }
 }

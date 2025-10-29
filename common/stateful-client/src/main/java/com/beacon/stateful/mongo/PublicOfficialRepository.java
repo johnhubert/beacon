@@ -1,7 +1,9 @@
 package com.beacon.stateful.mongo;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 
 import com.beacon.common.accountability.v1.PublicOfficial;
@@ -68,6 +70,39 @@ public class PublicOfficialRepository {
         Date lastRefreshed = document.getDate("last_refreshed_at");
         Instant refreshedAt = lastRefreshed == null ? null : lastRefreshed.toInstant();
         return Optional.of(new OfficialMetadata(uuid, versionHash, refreshedAt));
+    }
+
+    /**
+     * Returns the persisted official for the supplied source identifier when present.
+     *
+     * @param sourceId stable source identifier, e.g. a Bioguide ID
+     * @return optional official instance
+     */
+    public Optional<PublicOfficial> findOfficialBySourceId(String sourceId) {
+        Document document = collection.find(Filters.eq("source_id", sourceId)).first();
+        if (document == null) {
+            return Optional.empty();
+        }
+        return Optional.of(PublicOfficialDocumentConverter.toProto(document));
+    }
+
+    /**
+     * Retrieves a list of officials with an optional limit. When {@code limit} is less than or equal to zero the
+     * entire collection is returned.
+     *
+     * @param limit maximum number of officials to return, or {@code <= 0} for all results
+     * @return list of officials
+     */
+    public List<PublicOfficial> findAll(int limit) {
+        List<PublicOfficial> results = new ArrayList<>();
+        com.mongodb.client.FindIterable<Document> iterable = collection.find();
+        if (limit > 0) {
+            iterable = iterable.limit(limit);
+        }
+        for (Document document : iterable) {
+            results.add(PublicOfficialDocumentConverter.toProto(document));
+        }
+        return results;
     }
 
     public boolean deleteBySourceId(String sourceId) {

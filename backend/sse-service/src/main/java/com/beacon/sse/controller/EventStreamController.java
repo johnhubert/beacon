@@ -9,6 +9,10 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,12 +24,19 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api")
+@Tag(name = "Event Stream", description = "Server-sent event endpoints")
 public class EventStreamController {
 
     private static final Logger log = LoggerFactory.getLogger(EventStreamController.class);
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Subscribe to the Beacon SSE stream",
+            description = "Streams periodic Beacon events using Server-Sent Events.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Event stream established",
+                            content = @Content(mediaType = MediaType.TEXT_EVENT_STREAM_VALUE))
+            })
     public SseEmitter streamEvents() {
         SseEmitter emitter = new SseEmitter(0L);
         AtomicLong counter = new AtomicLong();
