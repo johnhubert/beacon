@@ -64,7 +64,7 @@ services:
   rest-officials:
     build:
       context: .
-      dockerfile: backend/rest-officials/Dockerfile
+      dockerfile: services/rest-officials/Dockerfile
     container_name: rest-officials
     depends_on:
       mongo:
@@ -82,7 +82,7 @@ services:
   auth-service:
     build:
       context: .
-      dockerfile: backend/auth-service/Dockerfile
+      dockerfile: services/auth-service/Dockerfile
     container_name: auth-service
     environment:
       - JAVA_OPTS=
@@ -99,7 +99,7 @@ services:
   sse:
     build:
       context: .
-      dockerfile: backend/sse-service/Dockerfile
+      dockerfile: services/sse-service/Dockerfile
     container_name: sse
     environment:
       - JAVA_OPTS=

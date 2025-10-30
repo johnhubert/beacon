@@ -13,9 +13,9 @@ if (congressCliDir.isDirectory) {
 
 modules += listOf(
     "common:auth",
-    "backend:rest-officials",
-    "backend:auth-service",
-    "backend:sse-service",
+    "services:rest-officials",
+    "services:auth-service",
+    "services:sse-service",
     "services:ingest-usa-fed"
 )
 

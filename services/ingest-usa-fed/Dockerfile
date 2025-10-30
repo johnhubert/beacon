@@ -5,7 +5,6 @@ COPY gradlew.bat gradlew.bat
 COPY gradle gradle
 COPY settings.gradle.kts build.gradle.kts ./
 COPY common ./common
-COPY backend ./backend
 COPY services ./services
 RUN chmod +x gradlew
 RUN ./gradlew :services:ingest-usa-fed:bootJar -x test
