@@ -6,6 +6,11 @@ import com.beacon.common.accountability.v1.PublicOfficial;
 import com.beacon.congress.client.CongressGovClient;
 import com.beacon.congress.client.CongressGovClientConfig;
 import com.beacon.congress.client.CongressGovClientException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.google.protobuf.Message;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.util.JsonFormat;
@@ -47,6 +52,15 @@ import org.apache.commons.cli.ParseException;
  * {@code third_party/congress.gov} reference files.</p>
  */
 public final class CongressCli {
+
+    private static final ObjectWriter JSON_WRITER;
+
+    static {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        JSON_WRITER = mapper.writer();
+    }
 
     private final PrintStream out;
     private final PrintStream err;
@@ -601,123 +615,54 @@ public final class CongressCli {
     }
 
     private void printJsonForIntegers(List<Integer> values) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("[");
-        for (int i = 0; i < values.size(); i++) {
-            if (i > 0) {
-                builder.append(",");
-            }
-            builder.append(values.get(i));
-        }
-        builder.append("]");
-        out.println(builder);
+        printAsJson(values);
     }
 
     private void printJsonForVotes(List<CongressGovClient.HouseVoteSummary> summaries, int congressNumber) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("[");
-        for (int i = 0; i < summaries.size(); i++) {
-            if (i > 0) {
-                builder.append(",");
-            }
-            CongressGovClient.HouseVoteSummary summary = summaries.get(i);
-            builder.append("{");
-            appendJsonNumber(builder, "congress", congressNumber);
-            builder.append(",");
-            appendJsonNumber(builder, "sessionNumber", summary.sessionNumber());
-            builder.append(",");
-            appendJsonNumber(builder, "rollCallNumber", summary.rollCallNumber());
-            builder.append(",");
-            appendJsonString(builder, "result", summary.result());
-            builder.append(",");
-            appendJsonString(builder, "voteType", summary.voteType());
-            builder.append(",");
-            appendJsonString(builder, "legislationType", summary.legislationType());
-            builder.append(",");
-            appendJsonString(builder, "legislationNumber", summary.legislationNumber());
-            builder.append(",");
-            appendJsonString(builder, "legislationUrl", summary.legislationUrl());
-            builder.append(",");
-            appendJsonString(builder, "sourceDataUrl", summary.sourceDataUrl());
-            builder.append(",");
-            appendJsonString(builder, "startDateUtc", summary.startDate() == null ? null : summary.startDate().toString());
-            builder.append(",");
-            appendJsonString(builder, "updateDateUtc", summary.updateDate() == null ? null : summary.updateDate().toString());
-            builder.append("}");
-        }
-        builder.append("]");
-        out.println(builder);
+        List<VoteSummaryJson> payload = summaries.stream()
+                .map(summary -> new VoteSummaryJson(
+                        congressNumber,
+                        summary.sessionNumber(),
+                        summary.rollCallNumber(),
+                        summary.result(),
+                        summary.voteType(),
+                        summary.legislationType(),
+                        summary.legislationNumber(),
+                        summary.legislationUrl(),
+                        summary.sourceDataUrl(),
+                        summary.startDate(),
+                        summary.updateDate()))
+                .collect(Collectors.toList());
+        printAsJson(payload);
     }
 
     private void printJsonForVoteMembers(CongressGovClient.HouseVoteDetail detail) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("{");
-        appendJsonNumber(builder, "congress", detail.congressNumber());
-        builder.append(",");
-        appendJsonNumber(builder, "sessionNumber", detail.sessionNumber());
-        builder.append(",");
-        appendJsonNumber(builder, "rollCallNumber", detail.rollCallNumber());
-        builder.append(",");
-        appendJsonString(builder, "question", detail.question());
-        builder.append(",");
-        appendJsonString(builder, "result", detail.result());
-        builder.append(",");
-        appendJsonString(builder, "voteType", detail.voteType());
-        builder.append(",");
-        appendJsonString(builder, "legislationType", detail.legislationType());
-        builder.append(",");
-        appendJsonString(builder, "legislationNumber", detail.legislationNumber());
-        builder.append(",");
-        appendJsonString(builder, "legislationUrl", detail.legislationUrl());
-        builder.append(",");
-        appendJsonString(builder, "sourceDataUrl", detail.sourceDataUrl());
-        builder.append(",");
-        appendJsonString(builder, "startDateUtc", detail.startDate() == null ? null : detail.startDate().toString());
-        builder.append(",");
-        appendJsonString(builder, "updateDateUtc", detail.updateDate() == null ? null : detail.updateDate().toString());
-        builder.append(",");
-        builder.append("\"members\":[");
-        boolean first = true;
-        for (Map.Entry<String, CongressGovClient.MemberVoteResult> entry : detail.memberVotes().entrySet()) {
-            if (!first) {
-                builder.append(",");
-            }
-            first = false;
-            builder.append("{");
-            appendJsonString(builder, "bioguideId", entry.getKey());
-            builder.append(",");
-            appendJsonString(builder, "voteCast", entry.getValue().voteCast());
-            builder.append("}");
-        }
-        builder.append("]");
-        builder.append("}");
-        out.println(builder);
+        List<VoteMemberJson> members = detail.memberVotes().entrySet().stream()
+                .map(entry -> new VoteMemberJson(entry.getKey(), entry.getValue().voteCast()))
+                .collect(Collectors.toList());
+        VoteDetailJson payload = new VoteDetailJson(
+                detail.congressNumber(),
+                detail.sessionNumber(),
+                detail.rollCallNumber(),
+                detail.question(),
+                detail.result(),
+                detail.voteType(),
+                detail.legislationType(),
+                detail.legislationNumber(),
+                detail.legislationUrl(),
+                detail.sourceDataUrl(),
+                detail.startDate(),
+                detail.updateDate(),
+                members);
+        printAsJson(payload);
     }
 
-    private void appendJsonString(StringBuilder builder, String field, String value) {
-        builder.append("\"").append(escapeJson(field)).append("\":");
-        if (value == null) {
-            builder.append("null");
-            return;
+    private void printAsJson(Object value) {
+        try {
+            out.println(JSON_WRITER.writeValueAsString(value));
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Unable to encode JSON output", ex);
         }
-        builder.append("\"").append(escapeJson(value)).append("\"");
-    }
-
-    private void appendJsonNumber(StringBuilder builder, String field, Number value) {
-        builder.append("\"").append(escapeJson(field)).append("\":");
-        if (value == null) {
-            builder.append("null");
-        } else {
-            builder.append(value);
-        }
-    }
-
-    private String escapeJson(String value) {
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", "\\r")
-                .replace("\n", "\\n");
     }
 
     private String formatInstant(Instant instant) {
@@ -738,6 +683,36 @@ public final class CongressCli {
         }
         return normalizedType + " " + normalizedNumber;
     }
+
+    private record VoteSummaryJson(
+            int congress,
+            int sessionNumber,
+            int rollCallNumber,
+            String result,
+            String voteType,
+            String legislationType,
+            String legislationNumber,
+            String legislationUrl,
+            String sourceDataUrl,
+            Instant startDateUtc,
+            Instant updateDateUtc) {}
+
+    private record VoteMemberJson(String bioguideId, String voteCast) {}
+
+    private record VoteDetailJson(
+            int congress,
+            int sessionNumber,
+            int rollCallNumber,
+            String question,
+            String result,
+            String voteType,
+            String legislationType,
+            String legislationNumber,
+            String legislationUrl,
+            String sourceDataUrl,
+            Instant startDateUtc,
+            Instant updateDateUtc,
+            List<VoteMemberJson> members) {}
 
     private void printJsonList(List<? extends Message> messages) throws IOException {
         JsonFormat.Printer printer = JsonFormat.printer()

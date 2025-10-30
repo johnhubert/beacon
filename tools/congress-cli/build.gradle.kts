@@ -18,6 +18,7 @@ dependencies {
     implementation("commons-cli:commons-cli:1.6.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.1")
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.17.1")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.1")
     implementation("com.google.protobuf:protobuf-java-util:3.25.3")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
