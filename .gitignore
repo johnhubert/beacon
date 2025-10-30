@@ -19,3 +19,5 @@ gradle-local.properties
 
 # Docker
 *.env
+# Editor settings
+.vscode/
