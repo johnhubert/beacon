@@ -2,11 +2,12 @@ import React, { FC } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { BottomTabNavigationOptions, createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { RouteProp } from "@react-navigation/native";
-import { TextStyle } from "react-native";
+import { TextStyle, TouchableOpacity } from "react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import SearchScreen from "../screens/SearchScreen";
 import { COLORS } from "../theme/colors";
+import { useAuth } from "../providers/AuthProvider";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -37,12 +38,35 @@ export const screenOptions = ({
   headerTintColor: COLORS.textPrimary,
   headerTitleStyle: {
     fontWeight: "700" as TextStyle["fontWeight"]
-  }
+  },
+  headerTitleAlign: "center"
 });
+
+const LogoutButton: FC = () => {
+  const { logout } = useAuth();
+  return (
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel="Log out"
+      onPress={() => {
+        void logout();
+      }}
+      style={{ paddingHorizontal: 12, paddingVertical: 6 }}
+    >
+      <Ionicons name="log-out-outline" size={22} color={COLORS.accent} />
+    </TouchableOpacity>
+  );
+};
 
 const AppNavigator: FC = () => (
   <Tab.Navigator screenOptions={screenOptions}>
-    <Tab.Screen name="Home" component={HomeScreen} />
+    <Tab.Screen
+      name="Home"
+      component={HomeScreen}
+      options={{
+        headerRight: () => <LogoutButton />
+      }}
+    />
     <Tab.Screen name="Search" component={SearchScreen} />
   </Tab.Navigator>
 );

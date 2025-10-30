@@ -18,10 +18,8 @@ const clampPercent = (value: number): number => {
 
 export interface RepresentativeMetrics {
   bigScore: number;
-  weeklyDelta: number;
-  votes: number;
-  statements: number;
-  funding: number;
+  presenceScore: number;
+  activityScore: number;
   lastUpdatedLabel: string;
   sourcesVerified: boolean;
 }
@@ -80,21 +78,26 @@ const RepresentativeCard: FC<RepresentativeCardProps> = ({ official, roleSubtitl
           </View>
           <Text style={styles.scoreValue}>{metrics.bigScore.toFixed(0)}/100</Text>
         </View>
-        <Text style={styles.deltaText}>This Week {metrics.weeklyDelta >= 0 ? "+" : ""}{metrics.weeklyDelta}</Text>
-      </View>
 
-      <View style={styles.section}>
-        <View style={styles.metricRow}>
-          <Text style={styles.metricTitle}>Votes</Text>
-          <Text style={styles.metricValue}>{metrics.votes}</Text>
-        </View>
-        <View style={styles.metricRow}>
-          <Text style={styles.metricTitle}>Statements</Text>
-          <Text style={styles.metricValue}>{metrics.statements}</Text>
-        </View>
-        <View style={styles.metricRow}>
-          <Text style={styles.metricTitle}>Funding</Text>
-          <Text style={styles.metricValue}>{metrics.funding}</Text>
+        <View style={styles.metricSplitRow}>
+          <View style={styles.splitMetric}>
+            <Text style={styles.splitLabel}>Presence</Text>
+            <View style={styles.splitBarBackground}>
+              <View
+                style={[styles.splitBarFill, { width: `${clampPercent(metrics.presenceScore)}%` }]}
+              />
+            </View>
+            <Text style={styles.splitValue}>{metrics.presenceScore.toFixed(0)}%</Text>
+          </View>
+          <View style={styles.splitMetric}>
+            <Text style={styles.splitLabel}>Activity</Text>
+            <View style={styles.splitBarBackground}>
+              <View
+                style={[styles.splitBarFill, { width: `${clampPercent(metrics.activityScore)}%` }]}
+              />
+            </View>
+            <Text style={styles.splitValue}>{metrics.activityScore.toFixed(0)}%</Text>
+          </View>
         </View>
       </View>
 
@@ -201,25 +204,33 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: COLORS.textPrimary
   },
-  deltaText: {
-    fontSize: 13,
-    color: COLORS.success,
-    fontWeight: "500"
-  },
-  metricRow: {
+  metricSplitRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 6
+    gap: 16
   },
-  metricTitle: {
-    fontSize: 14,
+  splitMetric: {
+    flex: 1,
+    gap: 6
+  },
+  splitLabel: {
+    fontSize: 13,
     fontWeight: "600",
     color: COLORS.textSecondary
   },
-  metricValue: {
-    fontSize: 16,
-    fontWeight: "700",
+  splitBarBackground: {
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    overflow: "hidden"
+  },
+  splitBarFill: {
+    height: "100%",
+    borderRadius: 8,
+    backgroundColor: COLORS.accent
+  },
+  splitValue: {
+    fontSize: 14,
+    fontWeight: "600",
     color: COLORS.textPrimary
   },
   footerRow: {

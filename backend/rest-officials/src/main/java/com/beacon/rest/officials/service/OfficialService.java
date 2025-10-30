@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import com.beacon.common.accountability.v1.PublicOfficial;
 import com.beacon.rest.officials.mapper.OfficialMapper;
+import com.beacon.rest.officials.model.AttendanceSnapshotResponse;
 import com.beacon.rest.officials.model.OfficialDetail;
 import com.beacon.rest.officials.model.OfficialSummary;
 import com.beacon.stateful.mongo.PublicOfficialRepository;
@@ -50,5 +51,17 @@ public class OfficialService {
         Assert.hasText(sourceId, "sourceId must be provided");
         return publicOfficialRepository.findOfficialBySourceId(sourceId)
                 .map(OfficialMapper::toDetail);
+    }
+
+    /**
+     * Retrieves attendance history snapshots for the supplied official.
+     */
+    public Optional<List<AttendanceSnapshotResponse>> findAttendanceHistory(String sourceId) {
+        Assert.hasText(sourceId, "sourceId must be provided");
+        return publicOfficialRepository.findOfficialBySourceId(sourceId)
+                .map(PublicOfficial::getAttendanceHistoryList)
+                .map(history -> history.stream()
+                        .map(OfficialMapper::toSnapshotResponse)
+                        .collect(Collectors.toList()));
     }
 }

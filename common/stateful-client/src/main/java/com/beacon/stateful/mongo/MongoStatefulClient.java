@@ -27,8 +27,8 @@ import org.slf4j.LoggerFactory;
  * </ul>
  *
  * <p>The Spring configuration in {@code services/ingest-usa-fed} wires this client as a singleton so
- * any microservice can inject {@link PublicOfficialRepository} or {@link LegislativeBodyRepository}
- * without worrying about credentials or driver initialization.
+ * any microservice can inject {@link PublicOfficialRepository}, {@link LegislativeBodyRepository}, or
+ * {@link VotingRecordRepository} without worrying about credentials or driver initialization.
  */
 public final class MongoStatefulClient implements Closeable {
 
@@ -39,6 +39,7 @@ public final class MongoStatefulClient implements Closeable {
     private final MongoDatabase database;
     private final PublicOfficialRepository publicOfficialRepository;
     private final LegislativeBodyRepository legislativeBodyRepository;
+    private final VotingRecordRepository votingRecordRepository;
 
     /**
      * Creates a client using the given configuration. Most callers should prefer
@@ -54,6 +55,7 @@ public final class MongoStatefulClient implements Closeable {
         this.database = mongoClient.getDatabase(config.databaseName());
         this.publicOfficialRepository = new PublicOfficialRepository(database.getCollection("public_officials"));
         this.legislativeBodyRepository = new LegislativeBodyRepository(database.getCollection("legislative_bodies"));
+        this.votingRecordRepository = new VotingRecordRepository(database.getCollection("legislative_body_votes"));
     }
 
     private static MongoClient createMongoClient(MongoStatefulConfig config) {
@@ -71,6 +73,10 @@ public final class MongoStatefulClient implements Closeable {
 
     public LegislativeBodyRepository legislativeBodies() {
         return legislativeBodyRepository;
+    }
+
+    public VotingRecordRepository votingRecords() {
+        return votingRecordRepository;
     }
 
     public MongoDatabase database() {

@@ -2,6 +2,7 @@ package com.beacon.rest.officials.controller;
 
 import java.util.List;
 
+import com.beacon.rest.officials.model.AttendanceSnapshotResponse;
 import com.beacon.rest.officials.model.OfficialDetail;
 import com.beacon.rest.officials.model.OfficialSummary;
 import com.beacon.rest.officials.service.OfficialService;
@@ -60,6 +61,22 @@ public class OfficialController {
             @Parameter(description = "Stable source identifier for the official", example = "A000360")
             @PathVariable("sourceId") String sourceId) {
         return officialService.findOfficial(sourceId)
+                .map(ResponseEntity::ok)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Official not found"));
+    }
+
+    @GetMapping("/{sourceId}/attendance-history")
+    @Operation(summary = "Retrieve an official's attendance history",
+            description = "Returns attendance snapshots for graphing and drill-down views.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Attendance history located",
+                            content = @Content(array = @ArraySchema(schema = @Schema(implementation = AttendanceSnapshotResponse.class)))),
+                    @ApiResponse(responseCode = "404", description = "Official not found", content = @Content)
+            })
+    public ResponseEntity<List<AttendanceSnapshotResponse>> getAttendanceHistory(
+            @Parameter(description = "Stable source identifier for the official", example = "A000360")
+            @PathVariable("sourceId") String sourceId) {
+        return officialService.findAttendanceHistory(sourceId)
                 .map(ResponseEntity::ok)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Official not found"));
     }

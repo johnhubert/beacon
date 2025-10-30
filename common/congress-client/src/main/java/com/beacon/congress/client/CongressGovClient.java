@@ -18,11 +18,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -201,6 +204,182 @@ public final class CongressGovClient {
                     Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber);
                     return toPublicOfficial(record, bodies.get(record.chamberType()));
                 });
+    }
+
+    /**
+     * Retrieves roll call vote summaries for the specified Congress/session (House only).
+     */
+    public List<HouseVoteSummary> fetchHouseVoteSummaries(int congressNumber, int sessionNumber) {
+        List<HouseVoteSummary> summaries = new ArrayList<>();
+        URI next = buildUri("/house-vote/%d/%d".formatted(congressNumber, sessionNumber), Map.of("limit", "250"));
+        while (next != null) {
+            JsonNode root = fetchJson(next);
+            JsonNode votesNode = root.path("houseRollCallVotes");
+            if (votesNode.isArray()) {
+                for (JsonNode voteNode : votesNode) {
+                    Integer rollCall = optionalInt(voteNode, "rollCallNumber");
+                    if (rollCall == null) {
+                        continue;
+                    }
+                    Instant startDate = parseDateTime(text(voteNode, "startDate"));
+                    Instant updateDate = parseDateTime(text(voteNode, "updateDate"));
+                    String result = text(voteNode, "result");
+                    String voteType = text(voteNode, "voteType");
+                    String legislationType = text(voteNode, "legislationType");
+                    String legislationNumber = text(voteNode, "legislationNumber");
+                    String legislationUrl = text(voteNode, "legislationUrl");
+                    String sourceDataUrl = text(voteNode, "sourceDataURL");
+                    summaries.add(new HouseVoteSummary(
+                            rollCall,
+                            sessionNumber,
+                            startDate,
+                            updateDate,
+                            result,
+                            voteType,
+                            legislationType,
+                            legislationNumber,
+                            legislationUrl,
+                            sourceDataUrl));
+                }
+            }
+            next = nextPage(root.path("pagination"));
+        }
+        return summaries;
+    }
+
+    /**
+     * Lists Congress numbers available for House roll call vote data.
+     */
+    public List<Integer> fetchAvailableHouseVoteCongresses() {
+        LinkedHashSet<Integer> congressNumbers = new LinkedHashSet<>();
+        URI next = buildUri("/house-vote", Map.of("limit", "250"));
+        while (next != null) {
+            JsonNode root = fetchJson(next);
+            JsonNode votesNode = root.path("houseRollCallVotes");
+            if (votesNode.isArray()) {
+                for (JsonNode voteNode : votesNode) {
+                    Integer congress = optionalInt(voteNode, "congress");
+                    if (congress != null) {
+                        congressNumbers.add(congress);
+                    }
+                }
+            }
+            next = nextPage(root.path("pagination"));
+        }
+        return new ArrayList<>(congressNumbers);
+    }
+
+    /**
+     * Retrieves member vote positions for the supplied House roll call vote.
+     */
+    public Map<String, MemberVoteResult> fetchHouseVoteMembers(int congressNumber, int sessionNumber, int voteNumber) {
+        Map<String, MemberVoteResult> results = new LinkedHashMap<>();
+        URI next = buildUri(
+                "/house-vote/%d/%d/%d/members".formatted(congressNumber, sessionNumber, voteNumber),
+                Map.of("limit", "250"));
+        while (next != null) {
+            JsonNode root = fetchJson(next);
+            JsonNode votesNode = root.path("houseRollCallMemberVotes");
+            if (!votesNode.isArray()) {
+                votesNode = root.path("houseRollCallVoteMemberVotes");
+            }
+            if (votesNode.isArray()) {
+                for (JsonNode voteNode : votesNode) {
+                    collectMemberVotes(voteNode, results);
+                }
+            } else if (votesNode.isObject()) {
+                collectMemberVotes(votesNode, results);
+            }
+            next = nextPage(root.path("pagination"));
+        }
+        return results;
+    }
+
+    /**
+     * Retrieves the detailed roll call metadata alongside per-member vote positions for the supplied House vote.
+     *
+     * @param congressNumber congress session to query
+     * @param sessionNumber session number (typically 1 or 2)
+     * @param voteNumber roll call number to retrieve
+     * @return structured vote detail including metadata and member positions
+     */
+    public HouseVoteDetail fetchHouseVoteDetail(int congressNumber, int sessionNumber, int voteNumber) {
+        Map<String, MemberVoteResult> results = new LinkedHashMap<>();
+        URI next = buildUri(
+                "/house-vote/%d/%d/%d/members".formatted(congressNumber, sessionNumber, voteNumber),
+                Map.of("limit", "250"));
+        Instant startDate = null;
+        Instant updateDate = null;
+        String question = null;
+        String result = null;
+        String voteType = null;
+        String sourceDataUrl = null;
+        String legislationType = null;
+        String legislationNumber = null;
+        String legislationUrl = null;
+
+        while (next != null) {
+            JsonNode root = fetchJson(next);
+            JsonNode votesNode = root.path("houseRollCallMemberVotes");
+            if (!votesNode.isArray()) {
+                votesNode = root.path("houseRollCallVoteMemberVotes");
+            }
+            if (votesNode.isArray()) {
+                for (JsonNode voteNode : votesNode) {
+                    startDate = firstNonNullInstant(startDate, parseDateTime(text(voteNode, "startDate")));
+                    updateDate = firstNonNullInstant(updateDate, parseDateTime(text(voteNode, "updateDate")));
+                    question = firstNonBlank(question, text(voteNode, "voteQuestion"));
+                    result = firstNonBlank(result, text(voteNode, "result"));
+                    voteType = firstNonBlank(voteType, text(voteNode, "voteType"));
+                    sourceDataUrl = firstNonBlank(sourceDataUrl, text(voteNode, "sourceDataURL"));
+                    legislationType = firstNonBlank(legislationType, text(voteNode, "legislationType"));
+                    legislationNumber = firstNonBlank(legislationNumber, text(voteNode, "legislationNumber"));
+                    legislationUrl = firstNonBlank(legislationUrl, text(voteNode, "legislationUrl"));
+                    collectMemberVotes(voteNode, results);
+                }
+            } else if (votesNode.isObject()) {
+                JsonNode voteNode = votesNode;
+                startDate = firstNonNullInstant(startDate, parseDateTime(text(voteNode, "startDate")));
+                updateDate = firstNonNullInstant(updateDate, parseDateTime(text(voteNode, "updateDate")));
+                question = firstNonBlank(question, text(voteNode, "voteQuestion"));
+                result = firstNonBlank(result, text(voteNode, "result"));
+                voteType = firstNonBlank(voteType, text(voteNode, "voteType"));
+                sourceDataUrl = firstNonBlank(sourceDataUrl, text(voteNode, "sourceDataURL"));
+                legislationType = firstNonBlank(legislationType, text(voteNode, "legislationType"));
+                legislationNumber = firstNonBlank(legislationNumber, text(voteNode, "legislationNumber"));
+                legislationUrl = firstNonBlank(legislationUrl, text(voteNode, "legislationUrl"));
+                collectMemberVotes(voteNode, results);
+            }
+            next = nextPage(root.path("pagination"));
+        }
+
+        if (results.isEmpty()) {
+            LOGGER.warn(
+                    "House vote detail for congress {} session {} roll call {} contained no member results; falling back to members endpoint",
+                    congressNumber,
+                    sessionNumber,
+                    voteNumber);
+            results.putAll(fetchHouseVoteMembers(congressNumber, sessionNumber, voteNumber));
+        }
+
+        if (updateDate == null) {
+            updateDate = startDate;
+        }
+
+        return new HouseVoteDetail(
+                congressNumber,
+                sessionNumber,
+                voteNumber,
+                startDate,
+                updateDate,
+                question,
+                result,
+                voteType,
+                sourceDataUrl,
+                legislationType,
+                legislationNumber,
+                legislationUrl,
+                results);
     }
 
     private Map<ChamberType, LegislativeBody> getLegislativeBodyMap(int congressNumber) {
@@ -383,6 +562,29 @@ public final class CongressGovClient {
             return LocalDate.of(startYear, 1, 3).atStartOfDay().atZone(ZoneOffset.UTC).toInstant();
         }
         return null;
+    }
+
+    private Integer optionalInt(JsonNode node, String fieldName) {
+        if (node == null || node.isMissingNode()) {
+            return null;
+        }
+        JsonNode child = node.path(fieldName);
+        return child.isInt() ? child.asInt() : null;
+    }
+
+    private Instant parseDateTime(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return OffsetDateTime.parse(value, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant();
+            } catch (DateTimeParseException ignoredAgain) {
+                return null;
+            }
+        }
     }
 
     private PublicOfficial toPublicOfficial(MemberRecord record, LegislativeBody legislativeBody) {
@@ -597,6 +799,77 @@ public final class CongressGovClient {
     public Optional<URI> getLastRequestUri() {
         return Optional.ofNullable(lastRequestUri);
     }
+
+    static void collectMemberVotes(JsonNode node, Map<String, MemberVoteResult> results) {
+        if (node == null || node.isMissingNode()) {
+            return;
+        }
+        JsonNode memberResults = node.path("results");
+        if (memberResults.isArray()) {
+            for (JsonNode memberNode : memberResults) {
+                String bioguideId = readText(memberNode, "bioguideID");
+                if (bioguideId == null || bioguideId.isBlank()) {
+                    continue;
+                }
+                String voteCast = readText(memberNode, "voteCast");
+                results.put(bioguideId, new MemberVoteResult(bioguideId, voteCast));
+            }
+        }
+    }
+
+    private static String readText(JsonNode node, String fieldName) {
+        if (node == null || node.isMissingNode()) {
+            return null;
+        }
+        JsonNode value = node.path(fieldName);
+        if (value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        return value.asText();
+    }
+
+    private static Instant firstNonNullInstant(Instant current, Instant candidate) {
+        if (current != null) {
+            return current;
+        }
+        return candidate;
+    }
+
+    private static String firstNonBlank(String current, String candidate) {
+        if (current != null && !current.isBlank()) {
+            return current;
+        }
+        return candidate;
+    }
+
+    public record HouseVoteDetail(
+            int congressNumber,
+            int sessionNumber,
+            int rollCallNumber,
+            Instant startDate,
+            Instant updateDate,
+            String question,
+            String result,
+            String voteType,
+            String sourceDataUrl,
+            String legislationType,
+            String legislationNumber,
+            String legislationUrl,
+            Map<String, MemberVoteResult> memberVotes) {}
+
+    public record HouseVoteSummary(
+            int rollCallNumber,
+            int sessionNumber,
+            Instant startDate,
+            Instant updateDate,
+            String result,
+            String voteType,
+            String legislationType,
+            String legislationNumber,
+            String legislationUrl,
+            String sourceDataUrl) {}
+
+    public record MemberVoteResult(String bioguideId, String voteCast) {}
 
     public record MemberListing(
             PublicOfficial publicOfficial,
