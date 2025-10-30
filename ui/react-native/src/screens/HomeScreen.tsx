@@ -106,10 +106,7 @@ const HomeScreen: FC = () => {
       contentContainerStyle={styles.contentContainer}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchFeaturedOfficial} />}
     >
-      <View style={styles.header}>
-        <Text style={styles.tagline}>Your civic signal dashboard</Text>
-        <Text style={styles.title}>Home</Text>
-      </View>
+      <Text style={styles.tagline}>Your civic signal dashboard</Text>
 
       {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
@@ -129,20 +126,12 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 24
   },
-  header: {
-    gap: 6
-  },
   tagline: {
     textTransform: "uppercase",
     letterSpacing: 1.5,
     fontSize: 12,
     fontWeight: "600",
     color: COLORS.textSecondary
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: COLORS.textPrimary
   },
   error: {
     color: COLORS.danger,
