@@ -17,6 +17,8 @@ public record AttendanceSummaryResponse(
         int votesTotal,
         @Schema(description = "Presence score rounded to the nearest whole number", example = "88")
         int presenceScore,
-        @Schema(description = "Participation score rounded to the nearest whole number", example = "81")
-        int participationScore) {
+        @Schema(description = "Activity (participation) score rounded to the nearest whole number", example = "81")
+        int participationScore,
+        @Schema(description = "Composite accountability score averaged from presence and activity", example = "85")
+        int overallScore) {
 }

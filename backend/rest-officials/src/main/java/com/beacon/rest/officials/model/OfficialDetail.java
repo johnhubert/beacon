@@ -1,8 +1,6 @@
 package com.beacon.rest.officials.model;
 
 import java.time.Instant;
-import java.util.List;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -36,12 +34,16 @@ public record OfficialDetail(
         String biographyUrl,
         @Schema(description = "Portrait image URL", example = "https://example.com/photos/jane.jpg")
         String photoUrl,
+        @Schema(description = "Presence score rounded to a whole number between 0 and 100", example = "92")
+        Integer presenceScore,
+        @Schema(description = "Activity score rounded to a whole number between 0 and 100", example = "88")
+        Integer activityScore,
+        @Schema(description = "Composite score averaged from presence and activity metrics", example = "90")
+        Integer overallScore,
         @Schema(description = "Version hash of the source payload for change detection", example = "9c54f7a3b0e62f43")
         String versionHash,
         @Schema(description = "Timestamp of the last successful refresh", type = "string", format = "date-time")
         Instant lastRefreshedAt,
         @Schema(description = "Aggregated presence and participation scores for the official")
-        AttendanceSummaryResponse attendanceSummary,
-        @Schema(description = "Per-period attendance history used for sparklines")
-        List<AttendanceSnapshotResponse> attendanceHistory) {
+        AttendanceSummaryResponse attendanceSummary) {
 }

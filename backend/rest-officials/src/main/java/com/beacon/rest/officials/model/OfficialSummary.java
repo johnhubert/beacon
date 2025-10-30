@@ -23,8 +23,10 @@ public record OfficialSummary(
         String photoUrl,
         @Schema(description = "Presence score rounded to a whole number between 0 and 100", example = "92")
         Integer presenceScore,
-        @Schema(description = "Participation score rounded to a whole number between 0 and 100", example = "88")
-        Integer participationScore,
+        @Schema(description = "Activity score (voting participation) rounded to a whole number between 0 and 100", example = "88")
+        Integer activityScore,
+        @Schema(description = "Composite score averaged from presence and activity metrics", example = "90")
+        Integer overallScore,
         @Schema(description = "Timestamp of the last successful refresh", type = "string", format = "date-time")
         Instant lastRefreshedAt) {
 }

@@ -14,20 +14,16 @@ import { CONFIG } from "../utils/config";
 
 const clampScore = (value: number): number => Math.min(Math.max(value, 0), 100);
 
-const deriveSeed = (official: OfficialSummary | OfficialDetail): number => {
-  const source = official.uuid ?? official.sourceId ?? official.fullName ?? "beacon";
-  // Produce a deterministic seed so mocked metrics remain stable between refreshes.
-  return source.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-};
-
 const buildMetrics = (official: OfficialSummary | OfficialDetail): RepresentativeMetrics => {
-  // Generate deterministic placeholder accountability metrics until the scoring API is wired in.
-  const seed = deriveSeed(official);
-  const bigScore = clampScore(50 + (seed % 45));
-  const weeklyDelta = ((seed % 5) - 2) as number;
-  const votes = 60 + (seed % 40);
-  const statements = 45 + ((seed * 3) % 30);
-  const funding = 55 + ((seed * 7) % 25);
+  const attendance = "attendanceSummary" in official ? official.attendanceSummary : null;
+  const presence = attendance?.presenceScore ?? official.presenceScore ?? 0;
+  const activity = attendance?.participationScore ?? official.activityScore ?? 0;
+  const bigScoreSource = attendance?.overallScore ?? official.overallScore ?? Math.round((presence + activity) / 2);
+
+  const bigScore = clampScore(bigScoreSource);
+  const presenceScore = clampScore(presence);
+  const activityScore = clampScore(activity);
+
   const lastUpdated = official.lastRefreshedAt
     ? new Date(official.lastRefreshedAt).toLocaleTimeString(undefined, {
         hour: "numeric",
@@ -37,10 +33,8 @@ const buildMetrics = (official: OfficialSummary | OfficialDetail): Representativ
 
   return {
     bigScore,
-    weeklyDelta,
-    votes,
-    statements,
-    funding,
+    presenceScore,
+    activityScore,
     lastUpdatedLabel: lastUpdated,
     sourcesVerified: true
   };

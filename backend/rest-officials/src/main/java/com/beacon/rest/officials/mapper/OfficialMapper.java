@@ -1,9 +1,7 @@
 package com.beacon.rest.officials.mapper;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import com.beacon.common.accountability.v1.PublicOfficial;
 import com.beacon.common.accountability.v1.AttendanceSummary;
@@ -24,6 +22,15 @@ public final class OfficialMapper {
     }
 
     public static OfficialSummary toSummary(PublicOfficial official) {
+        Integer presenceScore = null;
+        Integer activityScore = null;
+        Integer overallScore = null;
+        if (official.hasAttendanceSummary()) {
+            AttendanceSummary summary = official.getAttendanceSummary();
+            presenceScore = summary.getPresenceScore();
+            activityScore = summary.getParticipationScore();
+            overallScore = calculateOverallScore(presenceScore, activityScore);
+        }
         return new OfficialSummary(
                 official.getUuid(),
                 official.getSourceId(),
@@ -31,8 +38,9 @@ public final class OfficialMapper {
                 official.getPartyAffiliation(),
                 official.getRoleTitle(),
                 official.getPhotoUrl(),
-                attendanceScoreOrNull(official, AttendanceSummary::getPresenceScore),
-                attendanceScoreOrNull(official, AttendanceSummary::getParticipationScore),
+                presenceScore,
+                activityScore,
+                overallScore,
                 toInstant(official.getLastRefreshedAt()));
     }
 
@@ -40,9 +48,14 @@ public final class OfficialMapper {
         AttendanceSummaryResponse summaryResponse = official.hasAttendanceSummary()
                 ? toSummaryResponse(official.getAttendanceSummary())
                 : null;
-        List<AttendanceSnapshotResponse> historyResponse = official.getAttendanceHistoryList().stream()
-                .map(OfficialMapper::toSnapshotResponse)
-                .collect(Collectors.toList());
+        Integer presenceScore = null;
+        Integer activityScore = null;
+        Integer overallScore = null;
+        if (summaryResponse != null) {
+            presenceScore = summaryResponse.presenceScore();
+            activityScore = summaryResponse.participationScore();
+            overallScore = summaryResponse.overallScore();
+        }
         return new OfficialDetail(
                 official.getUuid(),
                 official.getSourceId(),
@@ -57,10 +70,12 @@ public final class OfficialMapper {
                 official.getOfficeStatus().name(),
                 official.getBiographyUrl(),
                 official.getPhotoUrl(),
+                presenceScore,
+                activityScore,
+                overallScore,
                 official.getVersionHash(),
                 toInstant(official.getLastRefreshedAt()),
-                summaryResponse,
-                historyResponse);
+                summaryResponse);
     }
 
     private static Instant toInstant(Timestamp timestamp) {
@@ -70,24 +85,19 @@ public final class OfficialMapper {
         return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
     }
 
-    private static Integer attendanceScoreOrNull(PublicOfficial official, java.util.function.ToIntFunction<AttendanceSummary> extractor) {
-        if (!official.hasAttendanceSummary()) {
-            return null;
-        }
-        return extractor.applyAsInt(official.getAttendanceSummary());
-    }
-
     private static AttendanceSummaryResponse toSummaryResponse(AttendanceSummary summary) {
+        int overallScore = calculateOverallScore(summary.getPresenceScore(), summary.getParticipationScore());
         return new AttendanceSummaryResponse(
                 summary.getSessionsAttended(),
                 summary.getSessionsTotal(),
                 summary.getVotesParticipated(),
                 summary.getVotesTotal(),
                 summary.getPresenceScore(),
-                summary.getParticipationScore());
+                summary.getParticipationScore(),
+                overallScore);
     }
 
-    private static AttendanceSnapshotResponse toSnapshotResponse(AttendanceSnapshot snapshot) {
+    public static AttendanceSnapshotResponse toSnapshotResponse(AttendanceSnapshot snapshot) {
         return new AttendanceSnapshotResponse(
                 snapshot.getPeriodLabel(),
                 toInstant(snapshot.getPeriodStart()),
@@ -98,5 +108,9 @@ public final class OfficialMapper {
                 snapshot.getVotesTotal(),
                 snapshot.getPresenceScore(),
                 snapshot.getParticipationScore());
+    }
+
+    private static int calculateOverallScore(int presenceScore, int participationScore) {
+        return Math.round((presenceScore + participationScore) / 2.0f);
     }
 }

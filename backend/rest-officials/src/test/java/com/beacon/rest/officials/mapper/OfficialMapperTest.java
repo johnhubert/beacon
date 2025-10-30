@@ -12,7 +12,6 @@ import com.beacon.rest.officials.model.OfficialDetail;
 import com.beacon.rest.officials.model.OfficialSummary;
 import com.google.protobuf.Timestamp;
 import java.time.Instant;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class OfficialMapperTest {
@@ -56,7 +55,8 @@ class OfficialMapperTest {
 
         OfficialSummary summary = OfficialMapper.toSummary(official);
         assertThat(summary.presenceScore()).isEqualTo(80);
-        assertThat(summary.participationScore()).isEqualTo(70);
+        assertThat(summary.activityScore()).isEqualTo(70);
+        assertThat(summary.overallScore()).isEqualTo(75);
 
         OfficialDetail detail = OfficialMapper.toDetail(official);
         AttendanceSummaryResponse summaryResponse = detail.attendanceSummary();
@@ -64,10 +64,12 @@ class OfficialMapperTest {
         assertThat(summaryResponse.sessionsTotal()).isEqualTo(10);
         assertThat(summaryResponse.presenceScore()).isEqualTo(80);
         assertThat(summaryResponse.participationScore()).isEqualTo(70);
+        assertThat(summaryResponse.overallScore()).isEqualTo(75);
+        assertThat(detail.presenceScore()).isEqualTo(80);
+        assertThat(detail.activityScore()).isEqualTo(70);
+        assertThat(detail.overallScore()).isEqualTo(75);
 
-        List<AttendanceSnapshotResponse> history = detail.attendanceHistory();
-        assertThat(history).hasSize(1);
-        AttendanceSnapshotResponse snapshotResponse = history.get(0);
+        AttendanceSnapshotResponse snapshotResponse = OfficialMapper.toSnapshotResponse(snapshot);
         assertThat(snapshotResponse.periodLabel()).isEqualTo("2025-01");
         assertThat(snapshotResponse.presenceScore()).isEqualTo(83);
         assertThat(snapshotResponse.participationScore()).isEqualTo(83);
