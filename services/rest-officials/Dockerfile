@@ -5,15 +5,14 @@ COPY gradlew.bat gradlew.bat
 COPY gradle gradle
 COPY settings.gradle.kts build.gradle.kts ./
 COPY common ./common
-COPY backend ./backend
 COPY services ./services
 RUN chmod +x gradlew
-RUN ./gradlew :backend:sse-service:bootJar -x test
+RUN ./gradlew :services:rest-officials:bootJar -x test
 
 FROM eclipse-temurin:21-jre
 ENV SPRING_OUTPUT_ANSI_ENABLED=ALWAYS \
     JAVA_OPTS=""
 WORKDIR /app
-COPY --from=build /workspace/backend/sse-service/build/libs/sse-service-0.0.1-SNAPSHOT.jar app.jar
-EXPOSE 8080
+COPY --from=build /workspace/services/rest-officials/build/libs/rest-officials-0.0.1-SNAPSHOT.jar app.jar
+EXPOSE 8081
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

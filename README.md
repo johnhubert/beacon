@@ -37,13 +37,13 @@ awareness and active civic life.
 
 - `ui/react-native/` &mdash; Expo React Native app that can run on devices via
   Expo Go or build to static web artifacts for nginx
-- `backend/rest-officials/` &mdash; REST APIs consumed by the UI
-- `backend/auth-service/` &mdash; Authentication endpoints that issue JWTs
-- `backend/sse-service/` &mdash; Server-Sent Events publisher streaming live data
+- `services/rest-officials/` &mdash; REST APIs consumed by the UI
+- `services/auth-service/` &mdash; Authentication endpoints that issue JWTs
+- `services/sse-service/` &mdash; Server-Sent Events publisher streaming live data
 - `nginx.conf` &mdash; Gateway config that serves the UI and proxies `/api`
 - `docker-compose.yml` &mdash; Builds and runs the entire stack
 
-Learn more about adding backend modules in `backend/README.md`.
+Learn more about adding backend services in `services/README.md`.
 
 ## Prerequisites
 
@@ -151,7 +151,7 @@ Each backend module is part of the shared Gradle build (Spring Boot 3.3 / JDK 21
 run them individually from the repo root, for example:
 
 ```bash
-./gradlew :backend:rest-officials:bootRun
+./gradlew :services:rest-officials:bootRun
 ```
 
 To build every module (including generated protobuf classes) run:
