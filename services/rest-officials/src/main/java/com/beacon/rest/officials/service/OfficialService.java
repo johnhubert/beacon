@@ -26,16 +26,23 @@ public class OfficialService {
     }
 
     /**
-     * Fetches at most {@code limit} officials ordered by the natural MongoDB ordering.
+     * Retrieves a page of officials ordered by display name to provide deterministic feeds.
      *
-     * @param limit optional limit; when {@code null} the default of 50 is applied
+     * @param page zero-based page index to retrieve; defaults to {@code 0} when {@code null}
+     * @param pageSize maximum number of officials to return; defaults to {@code 25} when {@code null}
      * @return list of summaries presented in the UI
      */
-    public List<OfficialSummary> fetchOfficials(Integer limit) {
-        int resolvedLimit = limit == null ? 50 : limit;
-        Assert.isTrue(resolvedLimit >= 0, "limit must not be negative");
+    public List<OfficialSummary> fetchOfficials(Integer page, Integer pageSize) {
+        int resolvedPage = page == null ? 0 : page;
+        int resolvedPageSize = pageSize == null ? 25 : pageSize;
+        Assert.isTrue(resolvedPage >= 0, "page must not be negative");
+        Assert.isTrue(resolvedPageSize > 0, "pageSize must be positive");
 
-        List<PublicOfficial> officials = publicOfficialRepository.findAll(resolvedLimit);
+        long offsetLong = (long) resolvedPage * resolvedPageSize;
+        Assert.isTrue(offsetLong <= Integer.MAX_VALUE, "Requested page exceeds supported range");
+        int offset = (int) offsetLong;
+
+        List<PublicOfficial> officials = publicOfficialRepository.findAllOrderedByName(resolvedPageSize, offset);
         return officials.stream()
                 .map(OfficialMapper::toSummary)
                 .collect(Collectors.toList());

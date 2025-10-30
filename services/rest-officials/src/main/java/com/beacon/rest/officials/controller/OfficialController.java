@@ -38,15 +38,17 @@ public class OfficialController {
 
     @GetMapping
     @Operation(summary = "List public officials",
-            description = "Returns a list of public officials ordered by the default MongoDB sort order.",
+            description = "Returns a paginated list of public officials ordered by display name in ascending order.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Officials returned successfully",
                             content = @Content(array = @ArraySchema(schema = @Schema(implementation = OfficialSummary.class))))
             })
     public List<OfficialSummary> listOfficials(
-            @Parameter(description = "Maximum number of officials to return", example = "25")
-            @RequestParam(value = "limit", required = false) Integer limit) {
-        return officialService.fetchOfficials(limit);
+            @Parameter(description = "Zero-based page index to retrieve", example = "0")
+            @RequestParam(value = "page", required = false) Integer page,
+            @Parameter(description = "Maximum number of officials per page", example = "25")
+            @RequestParam(value = "pageSize", required = false) Integer pageSize) {
+        return officialService.fetchOfficials(page, pageSize);
     }
 
     @GetMapping("/{sourceId}")

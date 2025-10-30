@@ -33,6 +33,7 @@ public class PublicOfficialRepository {
     private void ensureIndexes() {
         collection.createIndex(Indexes.ascending("source_id"), new IndexOptions().unique(true));
         collection.createIndex(Indexes.ascending("legislative_body_uuid"));
+        collection.createIndex(Indexes.ascending("full_name"));
     }
 
     public InsertOneResult addOfficial(PublicOfficial official) {
@@ -94,8 +95,30 @@ public class PublicOfficialRepository {
      * @return list of officials
      */
     public List<PublicOfficial> findAll(int limit) {
+        return findAllOrderedByName(limit, 0);
+    }
+
+    /**
+     * Retrieves officials ordered by their full name with optional pagination controls.
+     *
+     * @param limit maximum number of officials to return; when {@code <= 0} all remaining officials are returned
+     * @param offset number of officials to skip from the beginning of the sorted set
+     * @return ordered list of officials
+     */
+    public List<PublicOfficial> findAllOrderedByName(int limit, int offset) {
+        if (limit < 0) {
+            throw new IllegalArgumentException("limit must not be negative");
+        }
+        if (offset < 0) {
+            throw new IllegalArgumentException("offset must not be negative");
+        }
+
         List<PublicOfficial> results = new ArrayList<>();
-        com.mongodb.client.FindIterable<Document> iterable = collection.find();
+        com.mongodb.client.FindIterable<Document> iterable = collection.find()
+                .sort(Sorts.ascending("full_name"));
+        if (offset > 0) {
+            iterable = iterable.skip(offset);
+        }
         if (limit > 0) {
             iterable = iterable.limit(limit);
         }
