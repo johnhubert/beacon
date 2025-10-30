@@ -107,11 +107,13 @@ const styles = StyleSheet.create({
   },
   logoWrapper: {
     alignItems: "center",
-    marginBottom: 32
+    marginBottom: 32,
+    width: "100%"
   },
   logoImage: {
-    width: 160,
-    height: 160
+    width: "100%",
+    maxWidth: 360,
+    aspectRatio: 282 / 190
   },
   card: {
     backgroundColor: COLORS.surface,

@@ -260,7 +260,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.hd-johnny.beaconui";
-				PRODUCT_NAME = "BeaconUI";
+				PRODUCT_NAME = "Beacon";
 				SWIFT_OBJC_BRIDGING_HEADER = "BeaconUI/BeaconUI-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -289,7 +289,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.hd-johnny.beaconui";
-				PRODUCT_NAME = "BeaconUI";
+				PRODUCT_NAME = "Beacon";
 				SWIFT_OBJC_BRIDGING_HEADER = "BeaconUI/BeaconUI-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";

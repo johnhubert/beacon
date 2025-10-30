@@ -21,19 +21,13 @@ export interface OfficialDetail extends OfficialSummary {
   versionHash: string | null;
 }
 
-export const listOfficials = (
-  limit = 10,
-  token?: string
-): Promise<OfficialSummary[]> =>
+export const listOfficials = (limit = 25, token?: string): Promise<OfficialSummary[]> =>
   apiRequest<OfficialSummary[]>(`/api/officials?limit=${limit}`, {
     method: "GET",
     token
   });
 
-export const getOfficialBySourceId = (
-  sourceId: string,
-  token?: string
-): Promise<OfficialDetail> =>
+export const getOfficialBySourceId = (sourceId: string, token?: string): Promise<OfficialDetail> =>
   apiRequest<OfficialDetail>(`/api/officials/${encodeURIComponent(sourceId)}`, {
     method: "GET",
     token

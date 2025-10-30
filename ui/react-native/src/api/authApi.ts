@@ -13,27 +13,21 @@ export interface AuthResponse {
   profile: AuthUserProfile | null;
 }
 
-export interface AuthOptionsResponse {
-  googleEnabled: boolean;
-  googleWebClientId: string | null;
-  googleAndroidClientId: string | null;
-  googleIosClientId: string | null;
-  demoEnabled: boolean;
-}
-
 export const loginWithDemo = (username: string, password: string): Promise<AuthResponse> =>
   apiRequest<AuthResponse>("/api/auth/demo", {
     method: "POST",
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password }),
+    credentials: "include"
   });
 
-export const loginWithGoogleToken = (idToken: string): Promise<AuthResponse> =>
-  apiRequest<AuthResponse>("/api/auth/google", {
+export const fetchSession = (): Promise<AuthResponse> =>
+  apiRequest<AuthResponse>("/api/auth/session", {
+    method: "GET",
+    credentials: "include"
+  });
+
+export const logoutSession = (): Promise<void> =>
+  apiRequest<void>("/api/auth/logout", {
     method: "POST",
-    body: JSON.stringify({ idToken })
-  });
-
-export const fetchAuthOptions = (): Promise<AuthOptionsResponse> =>
-  apiRequest<AuthOptionsResponse>("/api/auth/options", {
-    method: "GET"
+    credentials: "include"
   });

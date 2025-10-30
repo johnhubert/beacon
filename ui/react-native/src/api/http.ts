@@ -7,7 +7,9 @@ export interface ApiRequestOptions extends Omit<RequestInit, "headers"> {
 
 export class ApiError extends Error {
   public readonly status: number;
+
   public readonly url?: string;
+
   public readonly details?: unknown;
 
   constructor(message: string, status: number, url?: string, details?: unknown) {
@@ -19,11 +21,15 @@ export class ApiError extends Error {
   }
 }
 
-const buildUrl = (path: string): string => {
-  if (!API_BASE_URL) {
-    return path;
+export class UnauthorizedError extends ApiError {
+  constructor(message = "Unauthorized", url?: string, details?: unknown) {
+    super(message, 401, url, details);
+    this.name = "UnauthorizedError";
   }
-  if (path.startsWith("http")) {
+}
+
+const buildUrl = (path: string): string => {
+  if (!API_BASE_URL || path.startsWith("http")) {
     return path;
   }
   return `${API_BASE_URL}${path}`;
@@ -33,6 +39,7 @@ export const apiRequest = async <TResponse = unknown>(
   path: string,
   options: ApiRequestOptions = {}
 ): Promise<TResponse> => {
+  // Centralized wrapper so we consistently inject auth headers, parse JSON, and surface diagnostics.
   const { token, headers, ...rest } = options;
   const url = buildUrl(path);
 
@@ -57,7 +64,7 @@ export const apiRequest = async <TResponse = unknown>(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Network request failed";
-    console.warn("[api] network request failed", { url, message });
+    console.error("[api] network request failed", { url, message });
     throw new ApiError(message, 0, url);
   }
 
@@ -79,27 +86,20 @@ export const apiRequest = async <TResponse = unknown>(
   if (!response.ok) {
     const parsed = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : undefined;
     const message =
-      (parsed?.message as string | undefined) ||
-      (parsed?.error as string | undefined) ||
-      response.statusText;
-    console.warn("[api] request returned error", {
+      (parsed?.message as string | undefined) ?? (parsed?.error as string | undefined) ?? response.statusText;
+    if (response.status === 401) {
+      // Unauthorized is a common control-flow path (e.g., unauthenticated session bootstrap),
+      // so skip noisy error logging while still surfacing the typed exception.
+      throw new UnauthorizedError(message || "Unauthorized", url, data);
+    }
+    console.error("[api] request returned error", {
       url,
       status: response.status,
       statusText: response.statusText,
       body: data
     });
-    if (response.status === 401) {
-      throw new UnauthorizedError(message || "Unauthorized", url, data);
-    }
     throw new ApiError(message || "Request failed", response.status, url, data);
   }
 
   return data as TResponse;
 };
-
-export class UnauthorizedError extends ApiError {
-  constructor(message = "Unauthorized", url?: string, details?: unknown) {
-    super(message, 401, url, details);
-    this.name = "UnauthorizedError";
-  }
-}

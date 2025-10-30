@@ -10,16 +10,8 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import {
-  fetchAuthOptions,
-  loginWithDemo,
-  loginWithGoogleToken,
-  AuthResponse,
-  AuthOptionsResponse,
-  AuthUserProfile
-} from "../api/authApi";
+import { AuthResponse, AuthUserProfile, fetchSession, loginWithDemo, logoutSession } from "../api/authApi";
 import { ApiError, UnauthorizedError } from "../api/http";
-import { DEV_MODE } from "../utils/config";
 
 const STORAGE_KEY = "@beacon/auth-session";
 
@@ -30,65 +22,24 @@ interface AuthState {
   expiresAt: string | null;
 }
 
-interface AuthOptions {
-  googleEnabled: boolean;
-  webClientId: string | null;
-  androidClientId: string | null;
-  iosClientId: string | null;
-  demoEnabled: boolean;
-}
-
 interface AuthContextValue {
   state: AuthState;
-  isDevMode: boolean;
-  options: AuthOptions;
   loginWithDemo: (username: string, password: string) => Promise<void>;
-  loginWithGoogleToken: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 type StoredSession = Omit<AuthState, "loading">;
 
 const initialState: AuthState = {
-  loading: true,
+  loading: false,
   token: null,
   profile: null,
   expiresAt: null
 };
 
-const initialOptions: AuthOptions = {
-  googleEnabled: false,
-  webClientId: null,
-  androidClientId: null,
-  iosClientId: null,
-  demoEnabled: DEV_MODE
-};
-
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 type AuthProviderProps = PropsWithChildren<unknown>;
-
-const normalizeBoolean = (value: unknown, fallback: boolean): boolean => {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim().toLowerCase();
-    if (trimmed === "true") {
-      return true;
-    }
-    if (trimmed === "false") {
-      return false;
-    }
-  }
-  if (typeof value === "number") {
-    return value !== 0;
-  }
-  if (value instanceof Boolean) {
-    return value.valueOf();
-  }
-  return fallback;
-};
 
 const mapAuthResponse = (response: AuthResponse): StoredSession => ({
   token: response?.accessToken ?? null,
@@ -108,92 +59,14 @@ const parseStoredSession = (raw: string): StoredSession | null => {
       expiresAt: typeof parsed.expiresAt === "string" ? parsed.expiresAt : null
     };
   } catch (error) {
-    console.warn("Failed to parse stored auth session", error);
+    console.warn("[auth] failed to parse stored session", error);
     return null;
   }
 };
 
 export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
   const [state, setState] = useState<AuthState>(initialState);
-  const [options, setOptions] = useState<AuthOptions>(initialOptions);
 
-  useEffect(() => {
-    /**
-     * Attempt to restore a previously persisted session so users stay logged in between launches.
-     */
-    const bootstrap = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(STORAGE_KEY);
-        if (!stored) {
-          setState((prev) => ({ ...prev, loading: false }));
-          return;
-        }
-        const parsed = parseStoredSession(stored);
-        if (parsed?.expiresAt && Date.parse(parsed.expiresAt) < Date.now()) {
-          await AsyncStorage.removeItem(STORAGE_KEY);
-          setState((prev) => ({ ...prev, loading: false }));
-          return;
-        }
-        setState({
-          loading: false,
-          token: parsed?.token ?? null,
-          profile: parsed?.profile ?? null,
-          expiresAt: parsed?.expiresAt ?? null
-        });
-      } catch (error) {
-        console.warn("Failed to bootstrap auth state", error);
-        setState((prev) => ({ ...prev, loading: false }));
-      }
-    };
-
-    bootstrap();
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    /**
-     * Load authentication configuration (e.g., Google client IDs) from the backend so
-     * the UI can determine which sign-in options to present.
-     */
-    const loadOptions = async () => {
-      try {
-        const response: AuthOptionsResponse = await fetchAuthOptions();
-        if (!mounted) {
-          return;
-        }
-        const googleEnabled = normalizeBoolean(response?.googleEnabled, false);
-        const demoEnabled = normalizeBoolean(response?.demoEnabled, DEV_MODE);
-        console.log("[auth] options loaded", {
-          googleEnabled,
-          demoEnabled,
-          rawGoogle: response?.googleEnabled,
-          rawDemo: response?.demoEnabled
-        });
-        setOptions({
-          googleEnabled,
-          webClientId: googleEnabled ? response?.googleWebClientId ?? null : null,
-          androidClientId: googleEnabled ? response?.googleAndroidClientId ?? null : null,
-          iosClientId: googleEnabled ? response?.googleIosClientId ?? null : null,
-          demoEnabled
-        });
-      } catch (error) {
-        console.warn("Unable to load auth options; falling back to defaults", error);
-        if (mounted) {
-          setOptions((prev) => ({ ...prev }));
-        }
-      }
-    };
-
-    loadOptions();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  /**
-   * Persist the current authenticated session both in memory and AsyncStorage so it
-   * survives app restarts.
-   */
   const persistSession = useCallback(async (session: StoredSession) => {
     const payload: StoredSession = {
       token: session.token,
@@ -207,10 +80,12 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
     });
   }, []);
 
-  /**
-   * Clear any active session information, effectively logging the user out everywhere.
-   */
   const clearSession = useCallback(async () => {
+    try {
+      await logoutSession();
+    } catch (error) {
+      console.warn("[auth] logout session request failed", error);
+    }
     await AsyncStorage.removeItem(STORAGE_KEY);
     setState({
       loading: false,
@@ -220,60 +95,76 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
     });
   }, []);
 
-  /**
-   * Perform demo-credential authentication and normalize common failure paths.
-   */
-  const authenticateWithDemo = useCallback(async (username: string, password: string) => {
-    try {
-      const response = await loginWithDemo(username, password);
-      await persistSession(mapAuthResponse(response));
-    } catch (error: unknown) {
-      if (error instanceof UnauthorizedError || (error instanceof ApiError && error.status === 401)) {
-        throw new Error("Invalid credentials");
+  useEffect(() => {
+    let mounted = true;
+
+    const bootstrap = async () => {
+      console.log("[auth] bootstrap start");
+      try {
+        const remoteSession = await fetchSession();
+        if (mounted && remoteSession) {
+          await persistSession(mapAuthResponse(remoteSession));
+          console.log("[auth] bootstrap restored session from server");
+          return;
+        }
+      } catch (error) {
+        if (!(error instanceof UnauthorizedError)) {
+          console.warn("[auth] remote session lookup failed; clearing any persisted session", error);
+        }
+        await AsyncStorage.removeItem(STORAGE_KEY);
       }
-      throw error;
-    }
+
+      if (!mounted) {
+        return;
+      }
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEY);
+        const parsed = stored ? parseStoredSession(stored) : null;
+        if (parsed) {
+          setState({
+            loading: false,
+            ...parsed
+          });
+          console.log("[auth] bootstrap restored session from storage");
+        } else {
+          setState((prev) => ({ ...prev, loading: false }));
+          console.log("[auth] bootstrap no session found");
+        }
+      } catch (storageError) {
+        console.error("[auth] unable to restore session from storage", storageError);
+        setState((prev) => ({ ...prev, loading: false }));
+      }
+    };
+
+    void bootstrap();
+    return () => {
+      mounted = false;
+    };
   }, [persistSession]);
 
-  /**
-   * Exchange a Google ID token for a Beacon access token, guarding against known error codes.
-   */
-  const authenticateWithGoogleToken = useCallback(
-    async (idToken: string) => {
+  const authenticateWithDemo = useCallback(
+    async (username: string, password: string) => {
       try {
-        const response = await loginWithGoogleToken(idToken);
+        const response = await loginWithDemo(username, password);
         await persistSession(mapAuthResponse(response));
       } catch (error: unknown) {
         if (error instanceof UnauthorizedError || (error instanceof ApiError && error.status === 401)) {
-          throw new Error("Google sign-in failed");
+          throw new Error("Invalid credentials");
         }
-        throw error;
+        console.error("[auth] unexpected demo login failure", error);
+        throw error instanceof Error ? error : new Error("Demo login failed");
       }
     },
     [persistSession]
   );
 
-  const sanitizedOptions = useMemo<AuthOptions>(
-    () => ({
-      googleEnabled: normalizeBoolean(options.googleEnabled, false),
-      webClientId: options.webClientId,
-      androidClientId: options.androidClientId,
-      iosClientId: options.iosClientId,
-      demoEnabled: normalizeBoolean(options.demoEnabled, DEV_MODE)
-    }),
-    [options]
-  );
-
   const value = useMemo<AuthContextValue>(
     () => ({
       state,
-      isDevMode: sanitizedOptions.demoEnabled,
-      options: sanitizedOptions,
       loginWithDemo: authenticateWithDemo,
-      loginWithGoogleToken: authenticateWithGoogleToken,
       logout: clearSession
     }),
-    [state, sanitizedOptions, authenticateWithDemo, authenticateWithGoogleToken, clearSession]
+    [state, authenticateWithDemo, clearSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
