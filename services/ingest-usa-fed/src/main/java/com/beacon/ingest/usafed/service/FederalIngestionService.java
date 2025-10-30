@@ -1,24 +1,22 @@
 package com.beacon.ingest.usafed.service;
 
-import com.beacon.common.accountability.v1.AccountabilityMetric;
-import com.beacon.common.accountability.v1.ChamberType;
-import com.beacon.common.accountability.v1.JurisdictionType;
 import com.beacon.common.accountability.v1.LegislativeBody;
-import com.beacon.common.accountability.v1.MemberVote;
 import com.beacon.common.accountability.v1.OfficialAccountabilityEvent;
-import com.beacon.common.accountability.v1.OfficeStatus;
 import com.beacon.common.accountability.v1.PublicOfficial;
-import com.beacon.common.accountability.v1.VotePosition;
-import com.beacon.common.accountability.v1.VotingRecord;
+import com.beacon.congress.client.CongressGovClient;
+import com.beacon.congress.client.CongressGovClientException;
 import com.beacon.ingest.usafed.config.CongressApiProperties;
 import com.beacon.ingest.usafed.publisher.AccountabilityEventPublisher;
-import com.beacon.stateful.mongo.LegislativeBodyRepository;
-import com.beacon.stateful.mongo.PublicOfficialRepository;
+import com.beacon.stateful.mongo.sync.RosterEntry;
+import com.beacon.stateful.mongo.sync.RosterSynchronizationService;
+import com.beacon.stateful.mongo.sync.RosterSynchronizationService.SyncResult;
 import com.google.protobuf.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Optional;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,120 +25,99 @@ import org.springframework.stereotype.Service;
 public class FederalIngestionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FederalIngestionService.class);
+    private static final String LOCK_NAMESPACE = "legislative-roster";
+    private static final String INGESTION_SOURCE = "congress.gov";
 
     private final AccountabilityEventPublisher publisher;
     private final CongressApiProperties properties;
-    private final PublicOfficialRepository publicOfficialRepository;
-    private final LegislativeBodyRepository legislativeBodyRepository;
+    private final CongressGovClient congressGovClient;
+    private final RosterSynchronizationService rosterSynchronizationService;
 
     public FederalIngestionService(
             AccountabilityEventPublisher publisher,
             CongressApiProperties properties,
-            Optional<PublicOfficialRepository> publicOfficialRepository,
-            Optional<LegislativeBodyRepository> legislativeBodyRepository) {
+            CongressGovClient congressGovClient,
+            RosterSynchronizationService rosterSynchronizationService) {
         this.publisher = publisher;
         this.properties = properties;
-        this.publicOfficialRepository = publicOfficialRepository.orElse(null);
-        this.legislativeBodyRepository = legislativeBodyRepository.orElse(null);
+        this.congressGovClient = congressGovClient;
+        this.rosterSynchronizationService = rosterSynchronizationService;
     }
 
-    public void ingestLatestSnapshots() {
-        // TODO: Replace placeholder with Congress.gov delta polling + LegiScan integrations per ingestion_plan.md.
-        LOGGER.info("Polling {} for latest federal activity (placeholder)", properties.baseUrl());
-        OfficialAccountabilityEvent placeholderEvent = buildPlaceholderEvent();
-        persistSnapshotState(placeholderEvent);
-        publisher.publish(placeholderEvent);
+    public void refreshCongressRoster() {
+        Duration refreshInterval = properties.pollInterval();
+        LOGGER.info("Evaluating congressional roster freshness for {}th Congress", properties.congressNumber());
+
+        try {
+            List<LegislativeBody> bodies = congressGovClient.fetchLegislativeBodies(properties.congressNumber());
+            for (LegislativeBody body : bodies) {
+                Supplier<List<RosterEntry>> supplier = () -> toRosterEntries(body);
+                SyncResult result = rosterSynchronizationService.synchronizeIfStale(
+                        LOCK_NAMESPACE,
+                        body,
+                        refreshInterval,
+                        supplier);
+                handleSyncResult(body, result);
+            }
+        } catch (CongressGovClientException ex) {
+            LOGGER.warn(
+                    "Congress.gov roster refresh skipped: {}. Verify CONGRESS_API_KEY or network access before retrying.",
+                    ex.getMessage());
+        } catch (Exception ex) {
+            LOGGER.error("Unexpected failure while refreshing congressional roster", ex);
+        }
     }
 
-    private void persistSnapshotState(OfficialAccountabilityEvent event) {
-        if (publicOfficialRepository == null || legislativeBodyRepository == null) {
-            LOGGER.debug("Mongo repositories unavailable; skipping stateful persistence");
+    private void handleSyncResult(LegislativeBody body, SyncResult result) {
+        if (result.lockHeldByOther()) {
+            LOGGER.debug("Another instance is refreshing {} (sourceId={}); skipping", body.getName(), body.getSourceId());
+            return;
+        }
+        if (result.skipped()) {
+            LOGGER.info(
+                    "Skipping {} refresh; last run at {} is within interval",
+                    body.getName(),
+                    result.refreshedAt());
+            return;
+        }
+        if (!result.refreshed()) {
+            LOGGER.debug("No updates applied for {}", body.getName());
             return;
         }
 
-        legislativeBodyRepository.upsert(event.getLegislativeBody());
+        LOGGER.info(
+                "Refreshed {} officials for {} ({} inserts, {} updates)",
+                result.scanned(),
+                body.getName(),
+                result.insertedOfficials().size(),
+                result.updatedOfficials().size());
 
-        if (publicOfficialRepository.existsBySourceId(event.getPublicOfficial().getSourceId())) {
-            publicOfficialRepository.updateOfficial(event.getPublicOfficial());
-        } else {
-            publicOfficialRepository.addOfficial(event.getPublicOfficial());
-        }
-
-        long totalOfficialsForBody = publicOfficialRepository.countByLegislativeBody(event.getPublicOfficial().getLegislativeBodyUuid());
-        LOGGER.info("{} officials stored for {}", totalOfficialsForBody, event.getLegislativeBody().getName());
+        result.insertedOfficials().forEach(official -> publishRosterEvent(body, official, false));
+        result.updatedOfficials().forEach(official -> publishRosterEvent(body, official, true));
     }
 
-    private OfficialAccountabilityEvent buildPlaceholderEvent() {
-        Instant now = Instant.now();
-        String legislativeBodyUuid = UUID.randomUUID().toString();
-        String publicOfficialUuid = UUID.randomUUID().toString();
-        String votingRecordUuid = UUID.randomUUID().toString();
+    private List<RosterEntry> toRosterEntries(LegislativeBody body) {
+        return congressGovClient.fetchMemberListings(properties.congressNumber(), body.getChamberType()).stream()
+                .map(listing -> new RosterEntry(listing.publicOfficial(), listing.sourceJson() == null ? "" : listing.sourceJson()))
+                .toList();
+    }
 
-        LegislativeBody legislativeBody = LegislativeBody.newBuilder()
-                .setUuid(legislativeBodyUuid)
-                .setSourceId("US-SENATE-118")
-                .setJurisdictionType(JurisdictionType.FEDERAL)
-                .setJurisdictionCode("US")
-                .setName("U.S. Senate")
-                .setChamberType(ChamberType.UPPER)
-                .setSession("118")
-                .build();
-
-        PublicOfficial publicOfficial = PublicOfficial.newBuilder()
-                .setUuid(publicOfficialUuid)
-                .setSourceId("S000033")
-                .setLegislativeBodyUuid(legislativeBodyUuid)
-                .setFullName("Placeholder Senator")
-                .setPartyAffiliation("I")
-                .setRoleTitle("Senator")
-                .setJurisdictionRegionCode("ME")
-                .setDistrictIdentifier("At-large")
-                .setTermStartDate(toTimestamp(now.minus(Duration.ofDays(730))))
-                .setOfficeStatus(OfficeStatus.ACTIVE)
-                .setPhotoUrl("https://placehold.co/128x128")
-                .build();
-
-        MemberVote memberVote = MemberVote.newBuilder()
-                .setUuid(UUID.randomUUID().toString())
-                .setSourceId("S000033-RC_118_12")
-                .setOfficialUuid(publicOfficialUuid)
-                .setVotingRecordUuid(votingRecordUuid)
-                .setVotePosition(VotePosition.YEA)
-                .setGroupPosition("Independent")
-                .build();
-
-        VotingRecord votingRecord = VotingRecord.newBuilder()
-                .setUuid(votingRecordUuid)
-                .setSourceId("118-2-12")
-                .setLegislativeBodyUuid(legislativeBodyUuid)
-                .setVoteDateUtc(toTimestamp(now.minusSeconds(3600)))
-                .setSubjectSummary("Concurrent resolution placeholder")
-                .setBillReference("S.CON.RES.5")
-                .setBillUri("https://www.congress.gov/concurrent-resolutions")
-                .setRollCallReference("RC_118_12")
-                .addMemberVotes(memberVote)
-                .build();
-
-        AccountabilityMetric accountabilityMetric = AccountabilityMetric.newBuilder()
-                .setUuid("alignment-placeholder")
-                .setSourceId("alignment-v1")
-                .setName("Statement vs Action Alignment")
-                .setScore(0.82)
-                .setMethodologyVersion("v1-alpha")
-                .setDetails("Placeholder metric until scoring service is built")
-                .build();
-
-        return OfficialAccountabilityEvent.newBuilder()
-                .setUuid(UUID.randomUUID().toString())
-                .setSourceId("congress.gov-placeholder")
-                .setCapturedAt(toTimestamp(now))
-                .setIngestionSource("congress.gov")
-                .setPartitionKey(buildPartitionKey(publicOfficialUuid))
-                .setLegislativeBody(legislativeBody)
-                .setPublicOfficial(publicOfficial)
-                .addVotingRecords(votingRecord)
-                .addAccountabilityMetrics(accountabilityMetric)
-                .build();
+    private void publishRosterEvent(LegislativeBody body, PublicOfficial official, boolean existing) {
+        try {
+            OfficialAccountabilityEvent event = OfficialAccountabilityEvent.newBuilder()
+                    .setUuid(UUID.randomUUID().toString())
+                    .setSourceId("congress-roster-" + official.getSourceId())
+                    .setCapturedAt(toTimestamp(Instant.now()))
+                    .setIngestionSource(INGESTION_SOURCE)
+                    .setPartitionKey(buildPartitionKey(official.getUuid(), body))
+                    .setLegislativeBody(body)
+                    .setPublicOfficial(official)
+                    .build();
+            publisher.publish(event);
+            LOGGER.debug("Published roster {} event for {}", existing ? "update" : "insert", official.getSourceId());
+        } catch (Exception ex) {
+            LOGGER.warn("Failed to publish roster event for {}", official.getSourceId(), ex);
+        }
     }
 
     private Timestamp toTimestamp(Instant instant) {
@@ -150,7 +127,8 @@ public class FederalIngestionService {
                 .build();
     }
 
-    private String buildPartitionKey(String officialUuid) {
-        return "%s::%s".formatted(officialUuid, properties.chamber().toLowerCase());
+    private String buildPartitionKey(String officialUuid, LegislativeBody body) {
+        String chamber = body.getChamberType().name().toLowerCase(Locale.ROOT);
+        return "%s::%s".formatted(officialUuid, chamber);
     }
 }

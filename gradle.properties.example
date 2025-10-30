@@ -6,3 +6,17 @@ API_CONGRESS_GOV_KEY=replace-with-your-api-key
 
 # Optional: override the default Congress number (e.g. 118)
 # CONGRESS_NUMBER=118
+
+# Shared JWT secret for the auth service and resource servers.
+# BEACON_AUTH_JWT_SECRET=replace-with-a-long-random-string
+
+# Optional Google OAuth client ids expected by the auth service.
+# BEACON_AUTH_GOOGLE_WEB_CLIENT_ID=
+# BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID=
+# BEACON_AUTH_GOOGLE_IOS_CLIENT_ID=
+
+# Optional Google OAuth client secret expected by the auth service when performing server-side flows.
+# BEACON_AUTH_GOOGLE_CLIENT_SECRET=
+
+# Enable development mode to allow demo/demo credentials (default true).
+# BEACON_AUTH_DEV_MODE=true

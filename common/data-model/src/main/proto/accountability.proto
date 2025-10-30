@@ -53,6 +53,7 @@ message LegislativeBody {
   string name = 5;
   ChamberType chamber_type = 6;
   string session = 7;
+  google.protobuf.Timestamp roster_last_refreshed_at = 8;
 }
 
 message PublicOfficial {
@@ -69,6 +70,8 @@ message PublicOfficial {
   OfficeStatus office_status = 11;
   string biography_url = 12;
   string photo_url = 13;
+  string version_hash = 14;
+  google.protobuf.Timestamp last_refreshed_at = 15;
 }
 
 message MemberVote {

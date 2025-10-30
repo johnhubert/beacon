@@ -24,6 +24,7 @@ class CongressGovIntegrationTest {
     private int congressNumber;
     private List<LegislativeBody> legislativeBodies;
     private List<PublicOfficial> houseMembers;
+    private List<PublicOfficial> senateMembers;
 
     @BeforeAll
     void setupClient() {
@@ -38,6 +39,7 @@ class CongressGovIntegrationTest {
         this.client = new CongressGovClient(config);
         this.legislativeBodies = client.fetchLegislativeBodies(congressNumber);
         this.houseMembers = client.fetchMembers(congressNumber, ChamberType.LOWER);
+        this.senateMembers = client.fetchMembers(congressNumber, ChamberType.UPPER);
     }
 
     @Test
@@ -86,6 +88,14 @@ class CongressGovIntegrationTest {
         assertThat(sample.getFullName()).isNotBlank();
         assertThat(sample.getPartyAffiliation()).isNotBlank();
         assertThat(sample.getJurisdictionRegionCode()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("Senate roster includes full membership")
+    void senateRosterIncludesFullMembership() {
+        assertThat(senateMembers)
+                .as("Expected approximately 100 seated senators")
+                .hasSizeGreaterThanOrEqualTo(100);
     }
 
     @Test

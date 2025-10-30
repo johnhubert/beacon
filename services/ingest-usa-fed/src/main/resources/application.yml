@@ -1,6 +1,11 @@
 spring:
   application:
     name: ingest-usa-fed
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      timeout: 5000
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     client-id: ingest-usa-fed
@@ -21,5 +26,6 @@ beacon:
   congress:
     base-url: ${CONGRESS_BASE_URL:https://api.congress.gov/v3}
     api-key: ${CONGRESS_API_KEY:demo-api-key}
-    poll-interval: ${CONGRESS_POLL_INTERVAL:PT5M}
+    poll-interval: ${CONGRESS_POLL_INTERVAL:PT1H}
     chamber: ${CONGRESS_DEFAULT_CHAMBER:Senate}
+    congress-number: ${CONGRESS_NUMBER:118}

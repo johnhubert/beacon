@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: rest-officials
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+beacon:
+  auth:
+    api-enabled: true
+    jwt-secret: ${BEACON_AUTH_JWT_SECRET:insecure-dev-secret}
+    issuer: auth-service
+    audiences:
+      - beacon-api

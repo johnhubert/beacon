@@ -1,3 +1,10 @@
+beacon:
+  congress:
+    api-key: test-api-key
+    poll-interval: PT1H
+    base-url: https://localhost.test/congress
+    scheduler:
+      enabled: false
 stateful:
   mongo:
     enabled: false

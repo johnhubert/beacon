@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: auth-service
+
+server:
+  port: 8085
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+beacon:
+  auth:
+    api-enabled: false
+    dev-mode: false
+    jwt-secret: ${BEACON_AUTH_JWT_SECRET:insecure-dev-secret}
+    issuer: auth-service
+    audiences:
+      - beacon-api
+    google:
+      enabled: true
+      web-client-id: ${BEACON_AUTH_GOOGLE_WEB_CLIENT_ID:}
+      android-client-id: ${BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID:}
+      ios-client-id: ${BEACON_AUTH_GOOGLE_IOS_CLIENT_ID:}
+      client-secret: ${BEACON_AUTH_GOOGLE_CLIENT_SECRET:}
+      issuer: https://accounts.google.com

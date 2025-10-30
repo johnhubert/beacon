@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -102,8 +103,9 @@ public final class CongressGovClient {
     private final CongressGovClientConfig config;
     private final HttpClient httpClient;
     private final ObjectMapper mapper;
-    private final Map<Integer, List<MemberRecord>> memberCache = new ConcurrentHashMap<>();
-    private final Map<Integer, Map<ChamberType, LegislativeBody>> bodyCache = new ConcurrentHashMap<>();
+    private final Map<MemberQueryKey, List<MemberRecord>> memberCache = new ConcurrentHashMap<>();
+    private final Map<MemberQueryKey, Map<ChamberType, LegislativeBody>> bodyCache = new ConcurrentHashMap<>();
+    private volatile URI lastRequestUri;
 
     public CongressGovClient(CongressGovClientConfig config) {
         this.config = Objects.requireNonNull(config, "config");
@@ -124,10 +126,58 @@ public final class CongressGovClient {
      * entire delegation is returned.
      */
     public List<PublicOfficial> fetchMembers(int congressNumber, ChamberType chamberFilter) {
-        Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber);
-        return getMembersForCongress(congressNumber).stream()
-                .filter(record -> chamberFilter == null || record.chamberType() == chamberFilter)
+        return fetchMembers(congressNumber, chamberFilter, null, null, null);
+    }
+
+    /**
+     * Returns members for the supplied chamber with optional filters.
+     *
+     * @param congressNumber congress session to query
+     * @param chamberFilter chamber to restrict results to (or {@code null} for all)
+     * @param currentMember when non-null, controls the {@code currentMember} query flag
+     * @param startDate optional ISO-8601 start date filter (inclusive)
+     * @param endDate optional ISO-8601 end date filter (inclusive)
+     * @return list of officials mapped to protobuf models
+     */
+    public List<PublicOfficial> fetchMembers(int congressNumber, ChamberType chamberFilter, Boolean currentMember, String startDate, String endDate) {
+        Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber, currentMember, startDate, endDate);
+        return getMembersForCongress(congressNumber, currentMember, startDate, endDate).stream()
+                .filter(record -> chamberFilter == null || chamberFilter == ChamberType.CHAMBER_TYPE_UNSPECIFIED || record.chamberType() == chamberFilter)
                 .map(record -> toPublicOfficial(record, bodies.get(record.chamberType())))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    public List<PublicOfficial> fetchMembers(int congressNumber, ChamberType chamberFilter, Boolean currentMember) {
+        return fetchMembers(congressNumber, chamberFilter, currentMember, null, null);
+    }
+
+    public List<MemberListing> fetchMemberListings(int congressNumber, ChamberType chamberFilter) {
+        return fetchMemberListings(congressNumber, chamberFilter, null, null, null);
+    }
+
+    /**
+     * Returns member listings with their raw payloads for the supplied chamber.
+     *
+     * @param congressNumber congress session to query
+     * @param chamberFilter optional chamber filter
+     * @param currentMember optional flag forwarded to the API query
+     * @param startDate optional ISO-8601 start date filter (inclusive)
+     * @param endDate optional ISO-8601 end date filter (inclusive)
+     * @return listings combining protobufs and raw JSON
+     */
+    public List<MemberListing> fetchMemberListings(int congressNumber, ChamberType chamberFilter, Boolean currentMember, String startDate, String endDate) {
+        Map<ChamberType, LegislativeBody> bodies = getLegislativeBodyMap(congressNumber, currentMember, startDate, endDate);
+        return getMembersForCongress(congressNumber, currentMember, startDate, endDate).stream()
+                .filter(record -> chamberFilter == null || chamberFilter == ChamberType.CHAMBER_TYPE_UNSPECIFIED || record.chamberType() == chamberFilter)
+                .map(record -> {
+                    LegislativeBody body = bodies.get(record.chamberType());
+                    PublicOfficial official = toPublicOfficial(record, body);
+                    if (official == null) {
+                        return null;
+                    }
+                    return new MemberListing(official, body, record.rawJson());
+                })
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
@@ -154,9 +204,14 @@ public final class CongressGovClient {
     }
 
     private Map<ChamberType, LegislativeBody> getLegislativeBodyMap(int congressNumber) {
-        return bodyCache.computeIfAbsent(congressNumber, key -> {
+        return getLegislativeBodyMap(congressNumber, null, null, null);
+    }
+
+    private Map<ChamberType, LegislativeBody> getLegislativeBodyMap(int congressNumber, Boolean currentMember, String startDate, String endDate) {
+        MemberQueryKey key = new MemberQueryKey(congressNumber, normalizeCurrent(currentMember), normalizeDate(startDate), normalizeDate(endDate));
+        return bodyCache.computeIfAbsent(key, k -> {
             Map<ChamberType, LegislativeBody> map = new EnumMap<>(ChamberType.class);
-            for (MemberRecord record : getMembersForCongress(congressNumber)) {
+            for (MemberRecord record : getMembersForCongress(congressNumber, currentMember, startDate, endDate)) {
                 map.computeIfAbsent(record.chamberType(), chamber -> buildLegislativeBody(congressNumber, chamber));
                 if (map.size() >= 2) {
                     break;
@@ -184,16 +239,22 @@ public final class CongressGovClient {
                 .build();
     }
 
-    private List<MemberRecord> getMembersForCongress(int congressNumber) {
-        return memberCache.computeIfAbsent(congressNumber, this::fetchMembersFromApi);
+    private List<MemberRecord> getMembersForCongress(int congressNumber, Boolean currentMemberFlag, String startDate, String endDate) {
+        MemberQueryKey key = new MemberQueryKey(congressNumber, normalizeCurrent(currentMemberFlag), normalizeDate(startDate), normalizeDate(endDate));
+        return memberCache.computeIfAbsent(key, k -> fetchMembersFromApi(k.congressNumber, k.currentMember, k.startDate, k.endDate));
     }
 
-    private List<MemberRecord> fetchMembersFromApi(int congressNumber) {
+    private List<MemberRecord> fetchMembersFromApi(int congressNumber, Boolean currentMemberFlag, String startDate, String endDate) {
         List<MemberRecord> records = new ArrayList<>();
-        URI next = buildUri("/member/congress/" + congressNumber, Map.of(
-                "limit", "250",
-                "currentMember", "true"
-        ));
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", "250");
+        params.put("currentMember", Boolean.toString(normalizeCurrent(currentMemberFlag)));
+        if (startDate != null && endDate != null) {
+            params.put("startDate", startDate);
+            params.put("endDate", endDate);
+        }
+
+        URI next = buildUri("/member/congress/" + congressNumber, params);
         while (next != null) {
             JsonNode root = fetchJson(next);
             JsonNode membersNode = root.path("members");
@@ -204,7 +265,8 @@ public final class CongressGovClient {
             }
             next = nextPage(root.path("pagination"));
         }
-        LOGGER.info("Fetched {} members for congress {}", records.size(), congressNumber);
+        LOGGER.info("Fetched {} members for congress {} (currentMember={}, startDate={}, endDate={})",
+                records.size(), congressNumber, normalizeCurrent(currentMemberFlag), startDate, endDate);
         return records;
     }
 
@@ -263,7 +325,8 @@ public final class CongressGovClient {
                 detailUrl,
                 chamberType,
                 termStart,
-                stateCode
+                stateCode,
+                memberNode.toString()
         );
         return Optional.of(record);
     }
@@ -356,10 +419,17 @@ public final class CongressGovClient {
                 .header("Accept", "application/json")
                 .build();
         try {
+            Instant start = Instant.now();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 400) {
-                throw new CongressGovClientException("Congress.gov request failed with status " + response.statusCode());
+            long elapsedMillis = Duration.between(start, Instant.now()).toMillis();
+            if (elapsedMillis > 1000) {
+                LOGGER.info("Slow Congress.gov request: {} {} ms", uri.getPath(), elapsedMillis);
             }
+            if (response.statusCode() >= 400) {
+                throw new CongressGovClientException(
+                        "Congress.gov request failed with status %d for %s".formatted(response.statusCode(), uri));
+            }
+            lastRequestUri = uri;
             return mapper.readTree(response.body());
         } catch (IOException e) {
             throw new CongressGovClientException("Unable to parse Congress.gov response", e);
@@ -500,6 +570,18 @@ public final class CongressGovClient {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    private boolean normalizeCurrent(Boolean currentMember) {
+        return currentMember == null ? true : currentMember;
+    }
+
+    private String normalizeDate(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private static String deterministicUuid(String seed) {
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
@@ -511,6 +593,18 @@ public final class CongressGovClient {
                 .build();
     }
 
+    /** Returns the most recent Congress.gov URI requested by this client. */
+    public Optional<URI> getLastRequestUri() {
+        return Optional.ofNullable(lastRequestUri);
+    }
+
+    public record MemberListing(
+            PublicOfficial publicOfficial,
+            LegislativeBody legislativeBody,
+            String sourceJson) {}
+
+    private record MemberQueryKey(int congressNumber, boolean currentMember, String startDate, String endDate) {}
+
     private record MemberRecord(
             String bioguideId,
             String name,
@@ -521,5 +615,6 @@ public final class CongressGovClient {
             String detailUrl,
             ChamberType chamberType,
             Instant termStart,
-            String stateCode) {}
+            String stateCode,
+            String rawJson) {}
 }

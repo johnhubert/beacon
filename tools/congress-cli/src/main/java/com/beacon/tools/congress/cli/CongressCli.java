@@ -7,6 +7,7 @@ import com.beacon.congress.client.CongressGovClient;
 import com.beacon.congress.client.CongressGovClientConfig;
 import com.beacon.congress.client.CongressGovClientException;
 import com.google.protobuf.Message;
+import com.google.protobuf.Timestamp;
 import com.google.protobuf.util.JsonFormat;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -17,6 +18,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -137,11 +141,13 @@ public final class CongressCli {
             return 1;
         }
 
+        boolean showUrl = commandLine.hasOption("show-url");
+
         try {
             return switch (operation) {
-                case LIST_CHAMBERS -> listChambers(client, congressNumber, format);
-                case LIST_MEMBERS -> listMembers(client, commandLine, congressNumber, format);
-                case MEMBER_DETAILS -> showMemberDetails(client, commandLine, congressNumber, format);
+                case LIST_CHAMBERS -> listChambers(client, congressNumber, format, showUrl);
+                case LIST_MEMBERS -> listMembers(client, commandLine, congressNumber, format, showUrl);
+                case MEMBER_DETAILS -> showMemberDetails(client, commandLine, congressNumber, format, showUrl);
             };
         } catch (CongressGovClientException ex) {
             err.printf("Congress.gov API error: %s%n", ex.getMessage());
@@ -190,11 +196,12 @@ public final class CongressCli {
         }
     }
 
-    private int listChambers(CongressGovClient client, int congressNumber, OutputFormat format)
+    private int listChambers(CongressGovClient client, int congressNumber, OutputFormat format, boolean showUrl)
             throws IOException {
         List<LegislativeBody> bodies = client.fetchLegislativeBodies(congressNumber);
         if (bodies.isEmpty()) {
             out.println("No legislative bodies returned by Congress.gov.");
+            maybePrintRequestUrl(client, showUrl);
             return 0;
         }
         bodies.sort(Comparator.comparing(LegislativeBody::getChamberType));
@@ -212,11 +219,13 @@ public final class CongressCli {
                 ));
             }
             out.println(renderer.render());
+            out.printf("Total records: %d%n", bodies.size());
         }
+        maybePrintRequestUrl(client, showUrl);
         return 0;
     }
 
-    private int listMembers(CongressGovClient client, CommandLine commandLine, int congressNumber, OutputFormat format)
+    private int listMembers(CongressGovClient client, CommandLine commandLine, int congressNumber, OutputFormat format, boolean showUrl)
             throws IOException {
         String chamberInput = commandLine.getOptionValue("chamber");
         if (chamberInput == null || chamberInput.isBlank()) {
@@ -231,10 +240,39 @@ public final class CongressCli {
             return 1;
         }
 
-        List<PublicOfficial> officials = client.fetchMembers(congressNumber, chamberType);
+        Boolean currentMember = parseCurrentFlag(commandLine.getOptionValue("current"));
+        Integer lastYears = parseLastYears(commandLine.getOptionValue("last-years"));
+        if (lastYears != null && lastYears <= 0) {
+            err.println("Error: --last-years must be a positive integer.");
+            return 1;
+        }
+
+        String startDate = null;
+        String endDate = null;
+        ZonedDateTime cutoffDateTime = null;
+        if (lastYears != null) {
+            ZonedDateTime nowUtc = ZonedDateTime.now(ZoneOffset.UTC);
+            cutoffDateTime = nowUtc.minusYears(lastYears);
+            startDate = cutoffDateTime.toLocalDate().toString();
+            endDate = nowUtc.toLocalDate().toString();
+        }
+
+        List<PublicOfficial> officials = client.fetchMembers(congressNumber, chamberType, currentMember, startDate, endDate);
         if (officials.isEmpty()) {
             out.println("No members returned for the requested chamber.");
+            maybePrintRequestUrl(client, showUrl);
             return 0;
+        }
+        if (lastYears != null) {
+            Instant cutoff = cutoffDateTime.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
+            officials = officials.stream()
+                    .filter(official -> isWithinLastYears(official, cutoff))
+                    .collect(Collectors.toCollection(ArrayList::new));
+            if (officials.isEmpty()) {
+                out.println("No members matched the requested filters.");
+                maybePrintRequestUrl(client, showUrl);
+                return 0;
+            }
         }
         officials.sort(Comparator.comparing(PublicOfficial::getFullName));
         if (format == OutputFormat.JSON) {
@@ -259,12 +297,14 @@ public final class CongressCli {
                 ));
             }
             out.println(renderer.render());
+            out.printf("Total records: %d%n", officials.size());
         }
+        maybePrintRequestUrl(client, showUrl);
         return 0;
     }
 
     private int showMemberDetails(CongressGovClient client, CommandLine commandLine, int congressNumber,
-            OutputFormat format) throws IOException {
+            OutputFormat format, boolean showUrl) throws IOException {
         String memberId = commandLine.getOptionValue("memberId");
         if (memberId == null || memberId.isBlank()) {
             err.println("Error: --memberId is required for member-details.");
@@ -294,6 +334,7 @@ public final class CongressCli {
             renderer.addRow(List.of("Term End", TimestampFormatter.format(record.getTermEndDate().getSeconds())));
             out.println(renderer.render());
         }
+        maybePrintRequestUrl(client, showUrl);
         return 0;
     }
 
@@ -309,6 +350,52 @@ public final class CongressCli {
 
     private String emptySafe(String value) {
         return (value == null || value.isBlank()) ? "-" : value;
+    }
+
+    private boolean isWithinLastYears(PublicOfficial official, Instant cutoff) {
+        if (!official.hasTermStartDate()) {
+            return false;
+        }
+        Instant start = toInstant(official.getTermStartDate());
+        return !start.isBefore(cutoff);
+    }
+
+    private Instant toInstant(Timestamp timestamp) {
+        return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
+    }
+
+    private Boolean parseCurrentFlag(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(Locale.US);
+        if ("true".equals(normalized)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equals(normalized)) {
+            return Boolean.FALSE;
+        }
+        err.printf("Warning: ignoring invalid --current value '%s'.%n", value);
+        return null;
+    }
+
+    private Integer parseLastYears(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ex) {
+            err.printf("Warning: ignoring invalid --last-years value '%s'.%n", value);
+            return null;
+        }
+    }
+
+    private void maybePrintRequestUrl(CongressGovClient client, boolean showUrl) {
+        if (!showUrl) {
+            return;
+        }
+        client.getLastRequestUri().ifPresent(uri -> out.printf("Request URL: %s%n", uri));
     }
 
     private void printJsonList(List<? extends Message> messages) throws IOException {
@@ -358,7 +445,7 @@ public final class CongressCli {
                 formatter.getDescPadding(),
                 "Examples:\n" +
                         "  congress-cli --operation list-chambers --key-file gradle.properties\n" +
-                        "  congress-cli --operation list-members --chamber house --format pretty --key-file gradle.properties\n" +
+                        "  congress-cli --operation list-members --chamber house --last-years 2 --key-file gradle.properties\n" +
                         "  congress-cli --operation member-details --memberId A000360 --format json",
                 true
         );
@@ -387,6 +474,18 @@ public final class CongressCli {
                 .desc("Chamber for list-members: house/lower or senate/upper")
                 .build());
         options.addOption(Option.builder()
+                .longOpt("current")
+                .hasArg()
+                .argName("true/false")
+                .desc("Whether to restrict to current members (default true)")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("last-years")
+                .hasArg()
+                .argName("number")
+                .desc("Limit to members whose term started within the past N years")
+                .build());
+        options.addOption(Option.builder()
                 .longOpt("memberId")
                 .hasArg()
                 .argName("id")
@@ -403,6 +502,10 @@ public final class CongressCli {
                 .hasArg()
                 .argName("type")
                 .desc("Output format: pretty (default) or json")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("show-url")
+                .desc("Prints the Congress.gov request URL after results")
                 .build());
         options.addOption(Option.builder("h")
                 .longOpt("help")

@@ -40,6 +40,14 @@ services:
       retries: 5
     restart: unless-stopped
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./ui/react-native
@@ -53,15 +61,39 @@ services:
       retries: 5
     restart: unless-stopped
 
-  rest:
+  rest-officials:
     build:
       context: .
-      dockerfile: backend/rest-service/Dockerfile
-    container_name: rest
+      dockerfile: backend/rest-officials/Dockerfile
+    container_name: rest-officials
+    depends_on:
+      mongo:
+        condition: service_healthy
     environment:
       - JAVA_OPTS=
+      - STATEFUL_MONGO_HOST=mongo
+      - STATEFUL_MONGO_PORT=27017
+      - STATEFUL_MONGO_DATABASE=accountability_stateful
+      - BEACON_AUTH_JWT_SECRET=${BEACON_AUTH_JWT_SECRET:-8f3e4b8a9d2c47e0895a1c2d3f4b5e6a7c8d9e0f1a2b3c4d5e6f708192a3b4c5}
     ports:
-      - "8081:8080"
+      - "8081:8081"
+    restart: unless-stopped
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: backend/auth-service/Dockerfile
+    container_name: auth-service
+    environment:
+      - JAVA_OPTS=
+      - BEACON_AUTH_JWT_SECRET=${BEACON_AUTH_JWT_SECRET:-8f3e4b8a9d2c47e0895a1c2d3f4b5e6a7c8d9e0f1a2b3c4d5e6f708192a3b4c5}
+      - BEACON_AUTH_GOOGLE_WEB_CLIENT_ID=${BEACON_AUTH_GOOGLE_WEB_CLIENT_ID:-}
+      - BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID=${BEACON_AUTH_GOOGLE_ANDROID_CLIENT_ID:-}
+      - BEACON_AUTH_GOOGLE_IOS_CLIENT_ID=${BEACON_AUTH_GOOGLE_IOS_CLIENT_ID:-}
+      - BEACON_AUTH_GOOGLE_CLIENT_SECRET=${BEACON_AUTH_GOOGLE_CLIENT_SECRET:-}
+      - BEACON_AUTH_DEV_MODE=${BEACON_AUTH_DEV_MODE:-true}
+    ports:
+      - "8085:8085"
     restart: unless-stopped
 
   sse:
@@ -80,7 +112,8 @@ services:
     container_name: nginx
     depends_on:
       - frontend
-      - rest
+      - rest-officials
+      - auth-service
       - sse
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
@@ -96,12 +129,17 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - ./build/docker/ingest-usa-fed.env
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - CONGRESS_BASE_URL=https://api.congress.gov/v3
-      - CONGRESS_API_KEY=${CONGRESS_API_KEY:-demo-api-key}
-      - CONGRESS_POLL_INTERVAL=PT5M
+      - CONGRESS_POLL_INTERVAL=PT1H
       - CONGRESS_DEFAULT_CHAMBER=Senate
+      - CONGRESS_NUMBER=118
+      - REDIS_HOST=redis
       - STATEFUL_MONGO_HOST=mongo
       - STATEFUL_MONGO_PORT=27017
       - STATEFUL_MONGO_DATABASE=accountability_stateful
