@@ -17,6 +17,10 @@
 - [x] Implement normalization + deduplication rules to ensure each record maps cleanly to the unified schema; drop or quarantine malformed payloads with visibility in logs/metrics.
   - Hourly roster job now refreshes both chambers via Congress.gov, hashes the raw payload for change detection, protects concurrent runs with a Redis NX lock, and upserts officials + hashes into Mongo.
   - Added reusable roster synchronization engine with per-legislative-body locks, refresh interval gating, and persisted refresh timestamps to prevent unnecessary rebuilds on service restart.
+- [ ] Evaluate `design/ingestion_plan.md` alongside the `third_party/congress.gov` API contract to extend the federal roster ingest + REST client with vote-history pulls that compute attendance metrics per member.
+  - Enrich the ingestion pipeline so each event includes per-member vote counts (sessions attended, votes participated in, overall bill totals) and persist raw counters plus rounded 0–100 presence/participation scores on the `PublicOfficial` state document and protobuf/model definitions.
+  - Capture per-session (e.g., monthly/term-based) participation snapshots in an array so downstream consumers can render trend sparklines; ensure the consumer service updates both cumulative and per-session aggregates idempotently.
+  - Expose the new scores through `rest-officials` and update the React Native UI to surface the presence/participation numbers within the representative card, including a tap-triggered tooltip that shows raw counts ("Present for 10 of 45 sessions") alongside a sparkline annotated with the last N session periods.
 - [ ] Package the service with structured logging, health checks, and lightweight metrics (fetch counts, failures, latency) to inform observability from day one.
 
 ## Workstream C – Kafka Backbone

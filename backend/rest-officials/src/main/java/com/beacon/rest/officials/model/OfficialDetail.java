@@ -1,6 +1,7 @@
 package com.beacon.rest.officials.model;
 
 import java.time.Instant;
+import java.util.List;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -38,5 +39,9 @@ public record OfficialDetail(
         @Schema(description = "Version hash of the source payload for change detection", example = "9c54f7a3b0e62f43")
         String versionHash,
         @Schema(description = "Timestamp of the last successful refresh", type = "string", format = "date-time")
-        Instant lastRefreshedAt) {
+        Instant lastRefreshedAt,
+        @Schema(description = "Aggregated presence and participation scores for the official")
+        AttendanceSummaryResponse attendanceSummary,
+        @Schema(description = "Per-period attendance history used for sparklines")
+        List<AttendanceSnapshotResponse> attendanceHistory) {
 }

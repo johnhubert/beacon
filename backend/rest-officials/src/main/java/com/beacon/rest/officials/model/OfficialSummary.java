@@ -21,6 +21,10 @@ public record OfficialSummary(
         String roleTitle,
         @Schema(description = "URL to the official portrait when available", example = "https://example.com/photos/jane.jpg")
         String photoUrl,
+        @Schema(description = "Presence score rounded to a whole number between 0 and 100", example = "92")
+        Integer presenceScore,
+        @Schema(description = "Participation score rounded to a whole number between 0 and 100", example = "88")
+        Integer participationScore,
         @Schema(description = "Timestamp of the last successful refresh", type = "string", format = "date-time")
         Instant lastRefreshedAt) {
 }

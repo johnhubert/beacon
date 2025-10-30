@@ -23,8 +23,10 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -148,6 +150,9 @@ public final class CongressCli {
                 case LIST_CHAMBERS -> listChambers(client, congressNumber, format, showUrl);
                 case LIST_MEMBERS -> listMembers(client, commandLine, congressNumber, format, showUrl);
                 case MEMBER_DETAILS -> showMemberDetails(client, commandLine, congressNumber, format, showUrl);
+                case LIST_CONGRESSES -> listHouseVoteCongresses(client, format, showUrl);
+                case LIST_VOTES -> listHouseVotes(client, commandLine, congressNumber, format, showUrl);
+                case VOTE_MEMBERS -> listHouseVoteMembers(client, commandLine, congressNumber, format, showUrl);
             };
         } catch (CongressGovClientException ex) {
             err.printf("Congress.gov API error: %s%n", ex.getMessage());
@@ -338,6 +343,203 @@ public final class CongressCli {
         return 0;
     }
 
+    private int listHouseVoteCongresses(CongressGovClient client, OutputFormat format, boolean showUrl) throws IOException {
+        List<Integer> congresses = client.fetchAvailableHouseVoteCongresses();
+        if (congresses.isEmpty()) {
+            out.println("No congress numbers returned for House votes.");
+            maybePrintRequestUrl(client, showUrl);
+            return 0;
+        }
+        congresses.sort(Comparator.reverseOrder());
+        if (format == OutputFormat.JSON) {
+            printJsonForIntegers(congresses);
+        } else {
+            TableRenderer renderer = new TableRenderer(List.of("Congress Number"));
+            for (Integer congress : congresses) {
+                renderer.addRow(List.of(String.valueOf(congress)));
+            }
+            out.println(renderer.render());
+            out.printf("Total congresses: %d%n", congresses.size());
+        }
+        maybePrintRequestUrl(client, showUrl);
+        return 0;
+    }
+
+    private int listHouseVotes(
+            CongressGovClient client,
+            CommandLine commandLine,
+            int congressNumber,
+            OutputFormat format,
+            boolean showUrl) throws IOException {
+        String chamberInput = commandLine.getOptionValue("chamber", "house");
+        ChamberType chamberType;
+        try {
+            chamberType = parseChamber(chamberInput);
+        } catch (IllegalArgumentException ex) {
+            err.printf("Error: %s%n", ex.getMessage());
+            return 1;
+        }
+        if (chamberType != ChamberType.LOWER) {
+            err.println("Error: vote listings currently support the House of Representatives only.");
+            return 1;
+        }
+
+        String sessionRaw = commandLine.getOptionValue("session");
+        Integer requestedSession = null;
+        if (sessionRaw != null && !sessionRaw.isBlank()) {
+            try {
+                requestedSession = Integer.parseInt(sessionRaw.trim());
+            } catch (NumberFormatException ex) {
+                err.printf("Error: invalid session value '%s'. Expected 1 or 2.%n", sessionRaw);
+                return 1;
+            }
+            if (requestedSession != 1 && requestedSession != 2) {
+                err.printf("Error: invalid session value '%s'. Expected 1 or 2.%n", sessionRaw);
+                return 1;
+            }
+        }
+
+        List<CongressGovClient.HouseVoteSummary> summaries = new ArrayList<>();
+        if (requestedSession != null) {
+            summaries.addAll(client.fetchHouseVoteSummaries(congressNumber, requestedSession));
+        } else {
+            for (int session = 1; session <= 2; session++) {
+                summaries.addAll(client.fetchHouseVoteSummaries(congressNumber, session));
+            }
+        }
+        if (summaries.isEmpty()) {
+            out.printf("No House votes returned for congress %d.%n", congressNumber);
+            maybePrintRequestUrl(client, showUrl);
+            return 0;
+        }
+        summaries.sort(Comparator
+                .comparingInt(CongressGovClient.HouseVoteSummary::sessionNumber)
+                .thenComparingInt(CongressGovClient.HouseVoteSummary::rollCallNumber));
+
+        if (format == OutputFormat.JSON) {
+            printJsonForVotes(summaries, congressNumber);
+        } else {
+            TableRenderer renderer = new TableRenderer(List.of(
+                    "Session",
+                    "Roll Call",
+                    "Result",
+                    "Vote Type",
+                    "Legislation",
+                    "Start (UTC)",
+                    "Updated (UTC)"
+            ));
+            for (CongressGovClient.HouseVoteSummary summary : summaries) {
+                renderer.addRow(List.of(
+                        String.valueOf(summary.sessionNumber()),
+                        String.valueOf(summary.rollCallNumber()),
+                        emptySafe(summary.result()),
+                        emptySafe(summary.voteType()),
+                        emptySafe(buildLegislationLabel(summary.legislationType(), summary.legislationNumber())),
+                        formatInstant(summary.startDate()),
+                        formatInstant(summary.updateDate())
+                ));
+            }
+            out.println(renderer.render());
+            out.printf("Total records: %d%n", summaries.size());
+        }
+        maybePrintRequestUrl(client, showUrl);
+        return 0;
+    }
+
+    private int listHouseVoteMembers(
+            CongressGovClient client,
+            CommandLine commandLine,
+            int congressNumber,
+            OutputFormat format,
+            boolean showUrl) throws IOException {
+        String chamberInput = commandLine.getOptionValue("chamber", "house");
+        ChamberType chamberType;
+        try {
+            chamberType = parseChamber(chamberInput);
+        } catch (IllegalArgumentException ex) {
+            err.printf("Error: %s%n", ex.getMessage());
+            return 1;
+        }
+        if (chamberType != ChamberType.LOWER) {
+            err.println("Error: vote member listings currently support the House of Representatives only.");
+            return 1;
+        }
+
+        String sessionRaw = commandLine.getOptionValue("session");
+        if (sessionRaw == null || sessionRaw.isBlank()) {
+            err.println("Error: --session is required for vote-members.");
+            return 1;
+        }
+        int sessionNumber;
+        try {
+            sessionNumber = Integer.parseInt(sessionRaw.trim());
+        } catch (NumberFormatException ex) {
+            err.printf("Error: invalid session value '%s'. Expected 1 or 2.%n", sessionRaw);
+            return 1;
+        }
+        if (sessionNumber != 1 && sessionNumber != 2) {
+            err.printf("Error: invalid session value '%s'. Expected 1 or 2.%n", sessionRaw);
+            return 1;
+        }
+
+        String voteRaw = commandLine.getOptionValue("vote-number");
+        if (voteRaw == null || voteRaw.isBlank()) {
+            err.println("Error: --vote-number is required for vote-members.");
+            return 1;
+        }
+        int voteNumber;
+        try {
+            voteNumber = Integer.parseInt(voteRaw.trim());
+        } catch (NumberFormatException ex) {
+            err.printf("Error: invalid vote number '%s'.%n", voteRaw);
+            return 1;
+        }
+
+        CongressGovClient.HouseVoteDetail detail = client.fetchHouseVoteDetail(congressNumber, sessionNumber, voteNumber);
+        Map<String, CongressGovClient.MemberVoteResult> memberVotes = detail.memberVotes();
+        if (memberVotes.isEmpty()) {
+            out.printf("No member votes returned for congress %d session %d roll call %d.%n", congressNumber, sessionNumber, voteNumber);
+            maybePrintRequestUrl(client, showUrl);
+            return 0;
+        }
+
+        if (format == OutputFormat.JSON) {
+            printJsonForVoteMembers(detail);
+        } else {
+            out.printf("Congress: %d  Session: %d  Roll Call: %d%n", detail.congressNumber(), detail.sessionNumber(), detail.rollCallNumber());
+            out.printf("Question: %s%n", emptySafe(detail.question()));
+            out.printf("Result: %s%n", emptySafe(detail.result()));
+            out.printf("Vote Type: %s%n", emptySafe(detail.voteType()));
+            out.printf("Legislation: %s%n", emptySafe(buildLegislationLabel(detail.legislationType(), detail.legislationNumber())));
+            out.printf("Legislation URL: %s%n", emptySafe(detail.legislationUrl()));
+            out.printf("Source URL: %s%n", emptySafe(detail.sourceDataUrl()));
+            out.println();
+
+            TableRenderer renderer = new TableRenderer(List.of("Bioguide ID", "Vote Cast"));
+            memberVotes.forEach((bioguideId, voteResult) ->
+                    renderer.addRow(List.of(
+                            emptySafe(bioguideId),
+                            emptySafe(voteResult.voteCast())
+                    )));
+            out.println(renderer.render());
+            out.printf("Total members: %d%n", memberVotes.size());
+
+            Map<String, Long> distribution = memberVotes.values().stream()
+                    .map(CongressGovClient.MemberVoteResult::voteCast)
+                    .map(value -> value == null || value.isBlank() ? "UNSPECIFIED" : value)
+                    .collect(Collectors.groupingBy(
+                            value -> value,
+                            LinkedHashMap::new,
+                            Collectors.counting()));
+            if (!distribution.isEmpty()) {
+                out.println("Vote distribution:");
+                distribution.forEach((label, count) -> out.printf("  %s: %d%n", label, count));
+            }
+        }
+        maybePrintRequestUrl(client, showUrl);
+        return 0;
+    }
+
     private ChamberType parseChamber(String value) {
         String normalized = value.trim().toUpperCase(Locale.US);
         return switch (normalized) {
@@ -398,6 +600,145 @@ public final class CongressCli {
         client.getLastRequestUri().ifPresent(uri -> out.printf("Request URL: %s%n", uri));
     }
 
+    private void printJsonForIntegers(List<Integer> values) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("[");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                builder.append(",");
+            }
+            builder.append(values.get(i));
+        }
+        builder.append("]");
+        out.println(builder);
+    }
+
+    private void printJsonForVotes(List<CongressGovClient.HouseVoteSummary> summaries, int congressNumber) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("[");
+        for (int i = 0; i < summaries.size(); i++) {
+            if (i > 0) {
+                builder.append(",");
+            }
+            CongressGovClient.HouseVoteSummary summary = summaries.get(i);
+            builder.append("{");
+            appendJsonNumber(builder, "congress", congressNumber);
+            builder.append(",");
+            appendJsonNumber(builder, "sessionNumber", summary.sessionNumber());
+            builder.append(",");
+            appendJsonNumber(builder, "rollCallNumber", summary.rollCallNumber());
+            builder.append(",");
+            appendJsonString(builder, "result", summary.result());
+            builder.append(",");
+            appendJsonString(builder, "voteType", summary.voteType());
+            builder.append(",");
+            appendJsonString(builder, "legislationType", summary.legislationType());
+            builder.append(",");
+            appendJsonString(builder, "legislationNumber", summary.legislationNumber());
+            builder.append(",");
+            appendJsonString(builder, "legislationUrl", summary.legislationUrl());
+            builder.append(",");
+            appendJsonString(builder, "sourceDataUrl", summary.sourceDataUrl());
+            builder.append(",");
+            appendJsonString(builder, "startDateUtc", summary.startDate() == null ? null : summary.startDate().toString());
+            builder.append(",");
+            appendJsonString(builder, "updateDateUtc", summary.updateDate() == null ? null : summary.updateDate().toString());
+            builder.append("}");
+        }
+        builder.append("]");
+        out.println(builder);
+    }
+
+    private void printJsonForVoteMembers(CongressGovClient.HouseVoteDetail detail) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("{");
+        appendJsonNumber(builder, "congress", detail.congressNumber());
+        builder.append(",");
+        appendJsonNumber(builder, "sessionNumber", detail.sessionNumber());
+        builder.append(",");
+        appendJsonNumber(builder, "rollCallNumber", detail.rollCallNumber());
+        builder.append(",");
+        appendJsonString(builder, "question", detail.question());
+        builder.append(",");
+        appendJsonString(builder, "result", detail.result());
+        builder.append(",");
+        appendJsonString(builder, "voteType", detail.voteType());
+        builder.append(",");
+        appendJsonString(builder, "legislationType", detail.legislationType());
+        builder.append(",");
+        appendJsonString(builder, "legislationNumber", detail.legislationNumber());
+        builder.append(",");
+        appendJsonString(builder, "legislationUrl", detail.legislationUrl());
+        builder.append(",");
+        appendJsonString(builder, "sourceDataUrl", detail.sourceDataUrl());
+        builder.append(",");
+        appendJsonString(builder, "startDateUtc", detail.startDate() == null ? null : detail.startDate().toString());
+        builder.append(",");
+        appendJsonString(builder, "updateDateUtc", detail.updateDate() == null ? null : detail.updateDate().toString());
+        builder.append(",");
+        builder.append("\"members\":[");
+        boolean first = true;
+        for (Map.Entry<String, CongressGovClient.MemberVoteResult> entry : detail.memberVotes().entrySet()) {
+            if (!first) {
+                builder.append(",");
+            }
+            first = false;
+            builder.append("{");
+            appendJsonString(builder, "bioguideId", entry.getKey());
+            builder.append(",");
+            appendJsonString(builder, "voteCast", entry.getValue().voteCast());
+            builder.append("}");
+        }
+        builder.append("]");
+        builder.append("}");
+        out.println(builder);
+    }
+
+    private void appendJsonString(StringBuilder builder, String field, String value) {
+        builder.append("\"").append(escapeJson(field)).append("\":");
+        if (value == null) {
+            builder.append("null");
+            return;
+        }
+        builder.append("\"").append(escapeJson(value)).append("\"");
+    }
+
+    private void appendJsonNumber(StringBuilder builder, String field, Number value) {
+        builder.append("\"").append(escapeJson(field)).append("\":");
+        if (value == null) {
+            builder.append("null");
+        } else {
+            builder.append(value);
+        }
+    }
+
+    private String escapeJson(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n");
+    }
+
+    private String formatInstant(Instant instant) {
+        return instant == null ? "-" : instant.toString();
+    }
+
+    private String buildLegislationLabel(String type, String number) {
+        String normalizedType = type == null ? "" : type.trim();
+        String normalizedNumber = number == null ? "" : number.trim();
+        if (normalizedType.isEmpty() && normalizedNumber.isEmpty()) {
+            return "-";
+        }
+        if (normalizedType.isEmpty()) {
+            return normalizedNumber;
+        }
+        if (normalizedNumber.isEmpty()) {
+            return normalizedType;
+        }
+        return normalizedType + " " + normalizedNumber;
+    }
+
     private void printJsonList(List<? extends Message> messages) throws IOException {
         JsonFormat.Printer printer = JsonFormat.printer()
                 .preservingProtoFieldNames()
@@ -445,7 +786,9 @@ public final class CongressCli {
                 formatter.getDescPadding(),
                 "Examples:\n" +
                         "  congress-cli --operation list-chambers --key-file gradle.properties\n" +
-                        "  congress-cli --operation list-members --chamber house --last-years 2 --key-file gradle.properties\n" +
+                        "  congress-cli --operation list-congresses\n" +
+                        "  congress-cli --operation list-votes --congress 118 --session 2 --key-file gradle.properties\n" +
+                        "  congress-cli --operation vote-members --congress 118 --session 2 --vote-number 17 --format json\n" +
                         "  congress-cli --operation member-details --memberId A000360 --format json",
                 true
         );
@@ -458,7 +801,7 @@ public final class CongressCli {
                 .longOpt("operation")
                 .hasArg()
                 .argName("name")
-                .desc("Operation to run: list-chambers, list-members, or member-details")
+                .desc("Operation to run: list-chambers, list-members, member-details, list-congresses, list-votes, or vote-members")
                 .required()
                 .build());
         options.addOption(Option.builder("k")
@@ -490,6 +833,18 @@ public final class CongressCli {
                 .hasArg()
                 .argName("id")
                 .desc("Biographical member identifier for member-details")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("session")
+                .hasArg()
+                .argName("number")
+                .desc("House session number when listing votes or vote members (1 or 2)")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("vote-number")
+                .hasArg()
+                .argName("rollCall")
+                .desc("Roll call number when retrieving vote members")
                 .build());
         options.addOption(Option.builder()
                 .longOpt("congress")
@@ -526,7 +881,10 @@ public final class CongressCli {
     private enum Operation {
         LIST_CHAMBERS("list-chambers"),
         LIST_MEMBERS("list-members"),
-        MEMBER_DETAILS("member-details");
+        MEMBER_DETAILS("member-details"),
+        LIST_CONGRESSES("list-congresses"),
+        LIST_VOTES("list-votes"),
+        VOTE_MEMBERS("vote-members");
 
         private final String flag;
 

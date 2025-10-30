@@ -48,4 +48,21 @@ public class LegislativeBodyRepository {
                 Filters.eq("source_id", sourceId),
                 Updates.set("roster_last_refreshed_at", Date.from(refreshedAt)));
     }
+
+    public Optional<Instant> findLastVoteIngestedAt(String sourceId) {
+        Document document = collection.find(Filters.eq("source_id", sourceId))
+                .projection(Projections.include("last_vote_ingested_at"))
+                .first();
+        if (document == null) {
+            return Optional.empty();
+        }
+        Date date = document.getDate("last_vote_ingested_at");
+        return date == null ? Optional.empty() : Optional.of(date.toInstant());
+    }
+
+    public void updateLastVoteIngestedAt(String sourceId, Instant ingestedAt) {
+        collection.updateOne(
+                Filters.eq("source_id", sourceId),
+                Updates.set("last_vote_ingested_at", Date.from(ingestedAt)));
+    }
 }

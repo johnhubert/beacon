@@ -5,7 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import org.springframework.context.annotation.Import;
 
-@SpringBootTest
+@SpringBootTest(properties = "stateful.mongo.enabled=false")
 @Import(TestBeansConfiguration.class)
 class IngestUsaFedApplicationTests {
 

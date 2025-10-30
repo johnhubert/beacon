@@ -21,6 +21,8 @@ public final class LegislativeBodyDocumentConverter {
                 .append("session", body.getSession());
         ProtoTimestampConverter.toDate(body.hasRosterLastRefreshedAt() ? body.getRosterLastRefreshedAt() : Timestamp.getDefaultInstance())
                 .ifPresent(date -> document.append("roster_last_refreshed_at", date));
+        ProtoTimestampConverter.toDate(body.hasLastVoteIngestedAt() ? body.getLastVoteIngestedAt() : Timestamp.getDefaultInstance())
+                .ifPresent(date -> document.append("last_vote_ingested_at", date));
         return document;
     }
 
@@ -34,6 +36,7 @@ public final class LegislativeBodyDocumentConverter {
                 .setChamberType(ChamberType.valueOf(document.getString("chamber_type")))
                 .setSession(document.getString("session"));
         ProtoTimestampConverter.toTimestamp(document.getDate("roster_last_refreshed_at")).ifPresent(builder::setRosterLastRefreshedAt);
+        ProtoTimestampConverter.toTimestamp(document.getDate("last_vote_ingested_at")).ifPresent(builder::setLastVoteIngestedAt);
         return builder.build();
     }
 }

@@ -54,6 +54,28 @@ message LegislativeBody {
   ChamberType chamber_type = 6;
   string session = 7;
   google.protobuf.Timestamp roster_last_refreshed_at = 8;
+  google.protobuf.Timestamp last_vote_ingested_at = 9;
+}
+
+message AttendanceSummary {
+  int32 sessions_attended = 1;
+  int32 sessions_total = 2;
+  int32 votes_participated = 3;
+  int32 votes_total = 4;
+  int32 presence_score = 5;
+  int32 participation_score = 6;
+}
+
+message AttendanceSnapshot {
+  string period_label = 1;
+  google.protobuf.Timestamp period_start = 2;
+  google.protobuf.Timestamp period_end = 3;
+  int32 sessions_attended = 4;
+  int32 sessions_total = 5;
+  int32 votes_participated = 6;
+  int32 votes_total = 7;
+  int32 presence_score = 8;
+  int32 participation_score = 9;
 }
 
 message PublicOfficial {
@@ -72,6 +94,8 @@ message PublicOfficial {
   string photo_url = 13;
   string version_hash = 14;
   google.protobuf.Timestamp last_refreshed_at = 15;
+  AttendanceSummary attendance_summary = 16;
+  repeated AttendanceSnapshot attendance_history = 17;
 }
 
 message MemberVote {
