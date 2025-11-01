@@ -193,7 +193,7 @@ const HomeScreen: FC = () => {
     [handlePhotoPress]
   );
 
-  const keyExtractor = useCallback((item: OfficialSummary) => item.sourceId ?? item.uuid, []);
+  const keyExtractor = useCallback((item: OfficialSummary) => item.sourceId, []);
 
   const modalImageDimensions = useMemo(() => {
     const window = Dimensions.get("window");

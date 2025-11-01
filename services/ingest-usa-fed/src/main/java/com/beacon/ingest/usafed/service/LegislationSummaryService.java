@@ -3,12 +3,12 @@ package com.beacon.ingest.usafed.service;
 import com.beacon.ingest.usafed.llm.LlmClient;
 import com.beacon.ingest.usafed.llm.Model;
 import com.beacon.ingest.usafed.llm.OpenAiModel;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
@@ -92,9 +92,12 @@ public class LegislationSummaryService {
             return "";
         }
 
-        // Jsoup handles charset detection when provided with the byte payload and base URL.
-        Document document = Jsoup.parse(new String(response.body(), StandardCharsets.UTF_8), legislationUrl);
-        String text = document == null ? "" : document.text();
+        String text;
+        try (ByteArrayInputStream bodyStream = new ByteArrayInputStream(response.body())) {
+            Document document = Jsoup.parse(bodyStream, null, legislationUrl);
+            text = document == null ? "" : document.text();
+        }
+
         if (text.length() > MAX_CONTENT_LENGTH) {
             text = text.substring(0, MAX_CONTENT_LENGTH);
         }

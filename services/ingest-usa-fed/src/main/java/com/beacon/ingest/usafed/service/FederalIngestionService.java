@@ -353,6 +353,7 @@ public class FederalIngestionService {
         if (normalizedSummary == null
                 && detail.legislationUrl() != null
                 && !detail.legislationUrl().isBlank()) {
+            // Track votes missing summaries so we can enrich them once scraping and LLM calls complete.
             summaryBacklog.put(votingRecord.getSourceId(), persisted);
         }
         LOGGER.debug(

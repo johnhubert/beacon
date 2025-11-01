@@ -82,9 +82,8 @@ public class OpenAiLlmClient implements LlmClient {
     }
 
     private HttpRequest buildRequest(ObjectNode payload) {
-        Duration timeout = properties.requestTimeout();
         HttpRequest.Builder builder = HttpRequest.newBuilder(chatCompletionsUri)
-                .timeout(timeout == null ? Duration.ofSeconds(30) : timeout)
+                .timeout(properties.requestTimeout())
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + properties.apiKey())
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()));
