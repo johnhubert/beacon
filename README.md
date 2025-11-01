@@ -54,24 +54,42 @@ Learn more about adding backend services in `services/README.md`.
 
 ### API credentials
 
-Sensitive credentials must never be committed to the repository. To work with third-party
-integrations locally (e.g., Congress.gov), copy the template file and keep the real key in your
-untracked `gradle.properties`:
+Sensitive credentials must never be committed to the repository. Copy the template file and keep
+your real keys in the untracked `gradle.properties`:
 
 ```bash
 cp gradle.properties.example gradle.properties
-echo "API_CONGRESS_GOV_KEY=your-real-key" >> gradle.properties
 ```
 
+Open the new `gradle.properties` and provide real values for at least:
+
+- `CONGRESS_API_KEY` — required for the congress.gov client.
+- `OPENAI_API_KEY` — used by the ingestion service to summarize legislation.
+
 Gradle automatically reads the properties file from the repo root. The file is ignored by Git, so
-your key stays local. For CI environments, export the same value as an environment variable instead
-of writing it to disk.
+your keys stay local. For CI or shared environments, export the same values as environment variables
+instead of writing them to disk.
 
 ## Running everything with Docker
 
-```bash
-docker compose up --build
-```
+### Setup
+
+1. Copy `gradle.properties.example` to `gradle.properties` (if you have not already) and set
+   `CONGRESS_API_KEY` plus `OPENAI_API_KEY`. Other optional entries (auth secrets, OAuth
+   clients, etc.) can stay commented out until you need them.
+2. Generate the environment file consumed by docker-compose:
+
+   ```bash
+   ./gradlew prepareDockerEnv
+   ```
+
+   The task reads all required values from `gradle.properties` and writes
+   `build/docker/ingest-usa-fed.env`. Re-run it whenever you update a property.
+3. Launch the stack:
+
+   ```bash
+   docker compose up --build
+   ```
 
 Services:
 

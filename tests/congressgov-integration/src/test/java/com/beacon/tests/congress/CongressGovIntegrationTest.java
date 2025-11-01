@@ -28,9 +28,9 @@ class CongressGovIntegrationTest {
 
     @BeforeAll
     void setupClient() {
-        String apiKey = System.getProperty("API_CONGRESS_GOV_KEY");
+        String apiKey = System.getProperty("CONGRESS_API_KEY");
         Assumptions.assumeTrue(apiKey != null && !apiKey.isBlank(),
-                "API_CONGRESS_GOV_KEY must be provided to run integration tests");
+                "CONGRESS_API_KEY must be provided to run integration tests");
         this.congressNumber = Integer.parseInt(System.getProperty("CONGRESS_NUMBER", "118"));
         CongressGovClientConfig config = CongressGovClientConfig.builder()
                 .apiKey(apiKey)

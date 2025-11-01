@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":common:data-model"))
     implementation(project(":common:stateful-client"))
     implementation(project(":common:congress-client"))
+    implementation("org.jsoup:jsoup:1.17.2")
 
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 

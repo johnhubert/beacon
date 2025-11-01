@@ -29,3 +29,10 @@ beacon:
     poll-interval: ${CONGRESS_POLL_INTERVAL:PT1H}
     chamber: ${CONGRESS_DEFAULT_CHAMBER:Senate}
     congress-number: ${CONGRESS_NUMBER:118}
+    additional-congresses: ${CONGRESS_ADDITIONAL_NUMBERS:}
+  llm:
+    openai:
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      organization: ${OPENAI_ORGANIZATION:}
+      request-timeout: ${OPENAI_REQUEST_TIMEOUT:PT30S}

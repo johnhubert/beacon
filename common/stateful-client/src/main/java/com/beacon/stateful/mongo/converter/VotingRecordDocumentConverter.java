@@ -37,7 +37,8 @@ public final class VotingRecordDocumentConverter {
                 .append("source_data_url", record.sourceDataUrl())
                 .append("legislation_type", record.legislationType())
                 .append("legislation_number", record.legislationNumber())
-                .append("legislation_url", record.legislationUrl());
+                .append("legislation_url", record.legislationUrl())
+                .append("summary", record.summary());
 
         ProtoTimestampConverter.toDate(votingRecord.hasVoteDateUtc() ? votingRecord.getVoteDateUtc() : Timestamp.getDefaultInstance())
                 .ifPresent(date -> document.append("vote_date_utc", date));
@@ -82,7 +83,8 @@ public final class VotingRecordDocumentConverter {
                 document.getString("vote_type"),
                 document.getString("legislation_type"),
                 document.getString("legislation_number"),
-                document.getString("legislation_url"));
+                document.getString("legislation_url"),
+                document.getString("summary"));
     }
 
     private static Document toDocument(MemberVote vote) {

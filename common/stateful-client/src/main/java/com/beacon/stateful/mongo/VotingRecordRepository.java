@@ -9,6 +9,7 @@ import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.Updates;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
@@ -90,6 +91,12 @@ public class VotingRecordRepository {
         return results;
     }
 
+    public void updateSummary(String sourceId, String summary) {
+        collection.updateOne(
+                Filters.eq("source_id", sourceId),
+                Updates.set("summary", summary));
+    }
+
     public record RecordMetadata(Instant updateDate, int congressNumber, int sessionNumber, int rollCallNumber) {}
 
     public record PersistedVotingRecord(
@@ -103,5 +110,6 @@ public class VotingRecordRepository {
             String voteType,
             String legislationType,
             String legislationNumber,
-            String legislationUrl) {}
+            String legislationUrl,
+            String summary) {}
 }

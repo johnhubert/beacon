@@ -16,7 +16,7 @@ response into our shared protobuf models via `common:congress-client`. The suite
 ### Prerequisites
 
 - A valid Congress.gov API key (free via api.data.gov). Copy `gradle.properties.example` from the
-  repo root to `gradle.properties` and insert your key (`API_CONGRESS_GOV_KEY=...`). The file is
+  repo root to `gradle.properties` and insert your key (`CONGRESS_API_KEY=...`). The file is
   `.gitignore`d to prevent accidental commits. You may also export the key as an environment
   variable or pass it inline when invoking Gradle.
 - Network access to `https://api.congress.gov`.
@@ -29,7 +29,7 @@ response into our shared protobuf models via `common:congress-client`. The suite
 ./gradlew :tests:congressgov-integration:test -PintegrationTests=true
 
 # or pass properties inline
-./gradlew :tests:congressgov-integration:test -PintegrationTests=true -PAPI_CONGRESS_GOV_KEY=your-key -PCONGRESS_NUMBER=118
+./gradlew :tests:congressgov-integration:test -PintegrationTests=true -PCONGRESS_API_KEY=your-key -PCONGRESS_NUMBER=118
 ```
 
 The test task automatically skips execution if an API key is not supplied, ensuring regular CI builds

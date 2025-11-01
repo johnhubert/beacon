@@ -134,7 +134,7 @@ public final class CongressCli {
 
         String apiKey = resolveApiKey(properties);
         if (apiKey == null || apiKey.isBlank()) {
-            err.println("Error: API_CONGRESS_GOV_KEY is required. Provide it via the properties file or environment.");
+            err.println("Error: CONGRESS_API_KEY is required. Provide it via the properties file or environment.");
             return 1;
         }
 
@@ -190,11 +190,11 @@ public final class CongressCli {
     }
 
     private String resolveApiKey(Properties properties) {
-        String fromEnv = System.getenv("API_CONGRESS_GOV_KEY");
+        String fromEnv = System.getenv("CONGRESS_API_KEY");
         if (fromEnv != null && !fromEnv.isBlank()) {
             return fromEnv.trim();
         }
-        return Optional.ofNullable(properties.getProperty("API_CONGRESS_GOV_KEY"))
+        return Optional.ofNullable(properties.getProperty("CONGRESS_API_KEY"))
                 .map(String::trim)
                 .orElse(null);
     }
@@ -783,7 +783,7 @@ public final class CongressCli {
                 .longOpt("key-file")
                 .hasArg()
                 .argName("file")
-                .desc("Path to properties file that provides API_CONGRESS_GOV_KEY (defaults to gradle.properties)")
+                .desc("Path to properties file that provides CONGRESS_API_KEY (defaults to gradle.properties)")
                 .build());
         options.addOption(Option.builder()
                 .longOpt("chamber")
