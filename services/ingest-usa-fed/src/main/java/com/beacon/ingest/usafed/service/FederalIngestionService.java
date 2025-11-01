@@ -24,11 +24,14 @@ import com.google.protobuf.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -51,6 +54,7 @@ public class FederalIngestionService {
     private final PublicOfficialRepository publicOfficialRepository;
     private final LegislativeBodyRepository legislativeBodyRepository;
     private final VotingRecordRepository votingRecordRepository;
+    private final LegislationSummaryService legislationSummaryService;
 
     public FederalIngestionService(
             AccountabilityEventPublisher publisher,
@@ -59,7 +63,8 @@ public class FederalIngestionService {
             RosterSynchronizationService rosterSynchronizationService,
             PublicOfficialRepository publicOfficialRepository,
             LegislativeBodyRepository legislativeBodyRepository,
-            VotingRecordRepository votingRecordRepository) {
+            VotingRecordRepository votingRecordRepository,
+            LegislationSummaryService legislationSummaryService) {
         this.publisher = publisher;
         this.properties = properties;
         this.congressGovClient = congressGovClient;
@@ -67,6 +72,7 @@ public class FederalIngestionService {
         this.publicOfficialRepository = publicOfficialRepository;
         this.legislativeBodyRepository = legislativeBodyRepository;
         this.votingRecordRepository = votingRecordRepository;
+        this.legislationSummaryService = legislationSummaryService;
     }
 
     public void refreshCongressRoster() {
@@ -189,9 +195,20 @@ public class FederalIngestionService {
         List<PersistedVotingRecord> existingRecords = votingRecordRepository.findByLegislativeBody(body.getUuid(), 0);
         Map<String, Instant> existingRecordUpdates = new HashMap<>();
         Map<String, Boolean> existingRecordCompleteness = new HashMap<>();
+        Map<String, String> existingRecordSummaries = new HashMap<>();
+        Map<String, PersistedVotingRecord> summaryBacklog = new LinkedHashMap<>();
         for (PersistedVotingRecord record : existingRecords) {
-            existingRecordUpdates.put(record.votingRecord().getSourceId(), record.updateDateUtc());
-            existingRecordCompleteness.put(record.votingRecord().getSourceId(), record.votingRecord().getMemberVotesCount() > 0);
+            String sourceId = record.votingRecord().getSourceId();
+            existingRecordUpdates.put(sourceId, record.updateDateUtc());
+            existingRecordCompleteness.put(sourceId, record.votingRecord().getMemberVotesCount() > 0);
+            String summary = Optional.ofNullable(record.summary()).map(String::trim).orElse("");
+            String normalizedSummary = summary.isBlank() ? null : summary;
+            existingRecordSummaries.put(sourceId, normalizedSummary);
+            if (normalizedSummary == null
+                    && record.legislationUrl() != null
+                    && !record.legislationUrl().isBlank()) {
+                summaryBacklog.put(sourceId, record);
+            }
             if (record.updateDateUtc() != null
                     && (latestSummaryUpdate == null || record.updateDateUtc().isAfter(latestSummaryUpdate))) {
                 latestSummaryUpdate = record.updateDateUtc();
@@ -235,7 +252,13 @@ public class FederalIngestionService {
 
         for (CongressGovClient.HouseVoteSummary summary : pendingSummaries) {
             try {
-                Instant update = ingestHouseVote(body, congressNumber, summary, officialUuidCache);
+                Instant update = ingestHouseVote(
+                        body,
+                        congressNumber,
+                        summary,
+                        officialUuidCache,
+                        existingRecordSummaries,
+                        summaryBacklog);
                 if (update != null && (latestProcessedUpdate == null || update.isAfter(latestProcessedUpdate))) {
                     latestProcessedUpdate = update;
                 }
@@ -267,6 +290,8 @@ public class FederalIngestionService {
             }
         }
 
+        generateMissingSummaries(body, summaryBacklog, existingRecordSummaries);
+
         if (pendingSummaries.isEmpty()) {
             LOGGER.debug("House vote cache for {} already up to date ({} stored)", body.getName(), cachedCount);
             return;
@@ -288,7 +313,9 @@ public class FederalIngestionService {
             LegislativeBody body,
             int congressNumber,
             CongressGovClient.HouseVoteSummary summary,
-            Map<String, Optional<String>> officialUuidCache) throws CongressGovClientException {
+            Map<String, Optional<String>> officialUuidCache,
+            Map<String, String> summaryCache,
+            Map<String, PersistedVotingRecord> summaryBacklog) throws CongressGovClientException {
         CongressGovClient.HouseVoteDetail detail = congressGovClient.fetchHouseVoteDetail(
                 congressNumber,
                 summary.sessionNumber(),
@@ -315,8 +342,20 @@ public class FederalIngestionService {
                 detail.voteType(),
                 detail.legislationType(),
                 detail.legislationNumber(),
-                detail.legislationUrl());
+                detail.legislationUrl(),
+                summaryCache.get(votingRecord.getSourceId()));
         votingRecordRepository.upsert(persisted);
+        String normalizedSummary = Optional.ofNullable(summaryCache.get(votingRecord.getSourceId()))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .orElse(null);
+        summaryCache.put(votingRecord.getSourceId(), normalizedSummary);
+        if (normalizedSummary == null
+                && detail.legislationUrl() != null
+                && !detail.legislationUrl().isBlank()) {
+            // Track votes missing summaries so we can enrich them once scraping and LLM calls complete.
+            summaryBacklog.put(votingRecord.getSourceId(), persisted);
+        }
         LOGGER.debug(
                 "Cached House vote congress {} session {} roll call {} for {}",
                 congressNumber,
@@ -324,6 +363,50 @@ public class FederalIngestionService {
                 persisted.rollCallNumber(),
                 body.getName());
         return persisted.updateDateUtc();
+    }
+
+    /**
+     * Generates missing legislation summaries after vote ingestion to avoid delaying the primary persistence path.
+     */
+    private void generateMissingSummaries(
+            LegislativeBody body,
+            Map<String, PersistedVotingRecord> summaryBacklog,
+            Map<String, String> summaryCache) {
+        if (summaryBacklog.isEmpty()) {
+            return;
+        }
+        for (PersistedVotingRecord record : summaryBacklog.values()) {
+            String sourceId = record.votingRecord().getSourceId();
+            String cachedSummary = Optional.ofNullable(summaryCache.get(sourceId)).orElse("");
+            if (!cachedSummary.isBlank()) {
+                continue;
+            }
+            String legislationUrl = record.legislationUrl();
+            if (legislationUrl == null || legislationUrl.isBlank()) {
+                LOGGER.debug("Skipping legislation summary for {} because no URL is available", sourceId);
+                continue;
+            }
+            try {
+                Optional<String> summary = legislationSummaryService.summarizeLegislation(legislationUrl);
+                if (summary.isEmpty()) {
+                    continue;
+                }
+                String normalizedSummary = summary.get();
+                votingRecordRepository.updateSummary(sourceId, normalizedSummary);
+                summaryCache.put(sourceId, normalizedSummary);
+                LOGGER.info(
+                        "Stored legislation summary for {} (body: {}, url: {})",
+                        sourceId,
+                        body.getName(),
+                        legislationUrl);
+            } catch (Exception ex) {
+                LOGGER.error(
+                        "Failed to store legislation summary for {} from {}",
+                        sourceId,
+                        legislationUrl,
+                        ex);
+            }
+        }
     }
 
     private VotingRecord buildVotingRecord(
@@ -511,9 +594,88 @@ public class FederalIngestionService {
         return UUID.nameUUIDFromBytes(seed.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
     }
 
+    /**
+     * Aggregates member listings across all targeted Congress sessions, ensuring we capture historical officials while
+     * prioritizing the most recent data for each BioGuide identifier before synchronizing the roster.
+     */
     private List<RosterEntry> toRosterEntries(LegislativeBody body) {
-        return congressGovClient.fetchMemberListings(properties.congressNumber(), body.getChamberType()).stream()
-                .map(listing -> new RosterEntry(listing.publicOfficial(), listing.sourceJson() == null ? "" : listing.sourceJson()))
+        Map<String, RosterEntry> entriesBySourceId = new LinkedHashMap<>();
+        List<Integer> rosterCongresses = resolveRosterCongresses();
+
+        for (Integer congress : rosterCongresses) {
+            if (congress == null || congress <= 0) {
+                continue;
+            }
+            List<CongressGovClient.MemberListing> listings;
+            try {
+                listings = congressGovClient.fetchMemberListings(congress, body.getChamberType());
+            } catch (CongressGovClientException ex) {
+                LOGGER.warn(
+                        "Failed to fetch roster for {} from congress {}: {}",
+                        body.getName(),
+                        congress,
+                        ex.getMessage());
+                continue;
+            } catch (Exception ex) {
+                LOGGER.error(
+                        "Unexpected error while fetching roster for {} from congress {}",
+                        body.getName(),
+                        congress,
+                        ex);
+                continue;
+            }
+
+            // Deduplicate by BioGuide ID so the most recent Congress entry wins, ensuring stable UUIDs.
+            for (CongressGovClient.MemberListing listing : listings) {
+                PublicOfficial official = listing.publicOfficial();
+                String sourceId = official == null ? "" : official.getSourceId();
+                if (sourceId == null || sourceId.isBlank()) {
+                    continue;
+                }
+                entriesBySourceId.computeIfAbsent(
+                        sourceId,
+                        key -> {
+                            PublicOfficial normalizedOfficial = official.toBuilder()
+                                    .setLegislativeBodyUuid(body.getUuid())
+                                    .build();
+                            String payload = listing.sourceJson() == null ? "" : listing.sourceJson();
+                            return new RosterEntry(normalizedOfficial, payload);
+                        });
+            }
+        }
+
+        LOGGER.info(
+                "Collected {} roster entries for {} from {} congress sources",
+                entriesBySourceId.size(),
+                body.getName(),
+                rosterCongresses.size());
+        return new ArrayList<>(entriesBySourceId.values());
+    }
+
+    /**
+     * Determines which Congress sessions should be queried during roster refresh, starting with the newest data
+     * so that richer records supersede historical entries when de-duplicating by BioGuide identifier.
+     */
+    private List<Integer> resolveRosterCongresses() {
+        LinkedHashSet<Integer> congresses = new LinkedHashSet<>(properties.rosterCongresses());
+        if (properties.additionalCongresses().isEmpty()) {
+            try {
+                List<Integer> available = congressGovClient.fetchAvailableHouseVoteCongresses();
+                Optional.ofNullable(available).orElse(List.of()).stream()
+                        .filter(Objects::nonNull)
+                        .filter(number -> number > 0)
+                        .forEach(congresses::add);
+            } catch (CongressGovClientException ex) {
+                LOGGER.warn("Unable to enumerate available congress numbers; using configured set only: {}", ex.getMessage());
+            } catch (Exception ex) {
+                LOGGER.error("Unexpected error while enumerating available congress numbers", ex);
+            }
+        }
+        if (congresses.isEmpty()) {
+            congresses.add(properties.congressNumber());
+        }
+        return congresses.stream()
+                .sorted(Comparator.reverseOrder())
                 .toList();
     }
 

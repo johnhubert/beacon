@@ -1,5 +1,5 @@
 import React, { FC, useState } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -16,6 +16,13 @@ const clampPercent = (value: number): number => {
   return Math.min(Math.max(value, 0), 100);
 };
 
+const formatScore = (value?: number): string => {
+  if (value === undefined || Number.isNaN(value) || !Number.isFinite(value)) {
+    return "0";
+  }
+  return value.toFixed(0);
+};
+
 export interface RepresentativeMetrics {
   bigScore: number;
   presenceScore: number;
@@ -28,9 +35,10 @@ interface RepresentativeCardProps {
   official: OfficialDetail | OfficialSummary;
   roleSubtitle?: string | null;
   metrics: RepresentativeMetrics;
+  onPressPhoto?: (official: OfficialDetail | OfficialSummary) => void;
 }
 
-const RepresentativeCard: FC<RepresentativeCardProps> = ({ official, roleSubtitle, metrics }) => {
+const RepresentativeCard: FC<RepresentativeCardProps> = ({ official, roleSubtitle, metrics, onPressPhoto }) => {
   // Render a stylized representative summary using verified theme colors.
   const [imageFailed, setImageFailed] = useState<boolean>(false);
 
@@ -43,12 +51,24 @@ const RepresentativeCard: FC<RepresentativeCardProps> = ({ official, roleSubtitl
       <View style={styles.headerRow}>
         <View style={styles.avatarWrapper}>
           {official.photoUrl && !imageFailed ? (
-            <Image
-              source={{ uri: official.photoUrl }}
-              style={styles.avatar}
-              onError={() => setImageFailed(true)}
-              accessibilityLabel={`${displayName} portrait`}
-            />
+            <TouchableOpacity
+              style={styles.avatarTouchable}
+              activeOpacity={0.8}
+              onPress={() => {
+                if (onPressPhoto) {
+                  onPressPhoto(official);
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Expand portrait of ${displayName}`}
+            >
+              <Image
+                source={{ uri: official.photoUrl }}
+                style={styles.avatar}
+                onError={() => setImageFailed(true)}
+                accessibilityLabel={`${displayName} portrait`}
+              />
+            </TouchableOpacity>
           ) : (
             <View style={styles.avatarFallback}>
               <Ionicons name="person" size={42} color={COLORS.textSecondary} />
@@ -76,7 +96,7 @@ const RepresentativeCard: FC<RepresentativeCardProps> = ({ official, roleSubtitl
               ]}
             />
           </View>
-          <Text style={styles.scoreValue}>{metrics.bigScore.toFixed(0)}/100</Text>
+          <Text style={styles.scoreValue}>{formatScore(metrics.bigScore)}/100</Text>
         </View>
 
         <View style={styles.metricSplitRow}>
@@ -87,16 +107,16 @@ const RepresentativeCard: FC<RepresentativeCardProps> = ({ official, roleSubtitl
                 style={[styles.splitBarFill, { width: `${clampPercent(metrics.presenceScore)}%` }]}
               />
             </View>
-            <Text style={styles.splitValue}>{metrics.presenceScore.toFixed(0)}%</Text>
+            <Text style={styles.splitValue}>{formatScore(metrics.presenceScore)}%</Text>
           </View>
           <View style={styles.splitMetric}>
-            <Text style={styles.splitLabel}>Activity</Text>
+            <Text style={styles.splitLabel}>Participation</Text>
             <View style={styles.splitBarBackground}>
               <View
                 style={[styles.splitBarFill, { width: `${clampPercent(metrics.activityScore)}%` }]}
               />
             </View>
-            <Text style={styles.splitValue}>{metrics.activityScore.toFixed(0)}%</Text>
+            <Text style={styles.splitValue}>{formatScore(metrics.activityScore)}%</Text>
           </View>
         </View>
       </View>
@@ -136,6 +156,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceOverlay,
     borderWidth: 1,
     borderColor: COLORS.border
+  },
+  avatarTouchable: {
+    flex: 1
   },
   avatar: {
     width: "100%",

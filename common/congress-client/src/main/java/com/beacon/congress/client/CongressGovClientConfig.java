@@ -17,7 +17,7 @@ public record CongressGovClientConfig(String baseUrl, String apiKey, Duration re
     }
 
     public static CongressGovClientConfig fromEnvironment(Map<String, String> env) {
-        String apiKey = Optional.ofNullable(env.get("API_CONGRESS_GOV_KEY"))
+        String apiKey = Optional.ofNullable(env.get("CONGRESS_API_KEY"))
                 .filter(value -> !value.isBlank())
                 .orElse(null);
         return builder().apiKey(apiKey).build();
@@ -51,7 +51,7 @@ public record CongressGovClientConfig(String baseUrl, String apiKey, Duration re
 
         public CongressGovClientConfig build() {
             if (apiKey == null || apiKey.isBlank()) {
-                throw new IllegalStateException("API key must be provided via API_CONGRESS_GOV_KEY or builder");
+                throw new IllegalStateException("API key must be provided via CONGRESS_API_KEY or builder");
             }
             return new CongressGovClientConfig(baseUrl, apiKey, requestTimeout);
         }

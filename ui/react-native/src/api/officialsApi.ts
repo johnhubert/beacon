@@ -47,11 +47,16 @@ export interface OfficialDetail extends OfficialSummary {
   attendanceSummary: AttendanceSummary | null;
 }
 
-export const listOfficials = (limit = 25, token?: string): Promise<OfficialSummary[]> =>
-  apiRequest<OfficialSummary[]>(`/api/officials?limit=${limit}`, {
+export const listOfficials = (page = 0, pageSize = 25, token?: string): Promise<OfficialSummary[]> => {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize)
+  });
+  return apiRequest<OfficialSummary[]>(`/api/officials?${params.toString()}`, {
     method: "GET",
     token
   });
+};
 
 export const getOfficialBySourceId = (sourceId: string, token?: string): Promise<OfficialDetail> =>
   apiRequest<OfficialDetail>(`/api/officials/${encodeURIComponent(sourceId)}`, {

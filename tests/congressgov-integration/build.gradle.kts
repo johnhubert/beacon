@@ -18,14 +18,14 @@ dependencies {
 }
 
 fun ProviderFactory.resolveCongressApiKey(): Provider<String> {
-    val envProvider = environmentVariable("API_CONGRESS_GOV_KEY")
-    val gradleProvider = gradleProperty("API_CONGRESS_GOV_KEY")
+    val envProvider = environmentVariable("CONGRESS_API_KEY")
+    val gradleProvider = gradleProperty("CONGRESS_API_KEY")
     val fileProvider = provider {
         val file = rootProject.file("gradle.properties")
         if (file.exists()) {
             Properties().apply {
                 file.inputStream().use(::load)
-            }.getProperty("API_CONGRESS_GOV_KEY", "")
+            }.getProperty("CONGRESS_API_KEY", "")
         } else {
             ""
         }
@@ -48,12 +48,12 @@ val testTask = tasks.test {
             return@onlyIf false
         }
         if (congressApiKey.get().isBlank()) {
-            logger.warn("Skipping Congress.gov integration tests because API_CONGRESS_GOV_KEY is not set")
+            logger.warn("Skipping Congress.gov integration tests because CONGRESS_API_KEY is not set")
             return@onlyIf false
         }
         true
     }
-    systemProperty("API_CONGRESS_GOV_KEY", congressApiKey.get())
+    systemProperty("CONGRESS_API_KEY", congressApiKey.get())
     systemProperty("CONGRESS_NUMBER", congressNumberProp.get())
 }
 

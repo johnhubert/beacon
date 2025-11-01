@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CongressCliIntegrationTest {
 
-    private static final String KEY_PROPERTY = "API_CONGRESS_GOV_KEY";
+    private static final String KEY_PROPERTY = "CONGRESS_API_KEY";
 
     @TempDir
     Path tempDir;
