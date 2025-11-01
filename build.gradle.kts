@@ -1,4 +1,5 @@
 import org.gradle.api.GradleException
+import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
@@ -36,6 +37,42 @@ subprojects {
         options.compilerArgs.add("-parameters")
     }
 }
+
+fun Project.serviceProjects(): List<Project> =
+    rootProject.subprojects
+        .filter { it.path.startsWith(":services:") }
+        .sortedBy { it.name }
+
+fun Project.serviceMesh(serviceProjects: List<Project>): Map<Project, List<Project>> {
+    val servicePaths = serviceProjects.map { it.path }.toSet()
+    return serviceProjects.associateWith { project ->
+        val dependencies = mutableSetOf<Project>()
+        project.configurations.forEach { configuration ->
+            configuration.dependencies.withType(ProjectDependency::class.java)
+                .forEach { dependency: ProjectDependency ->
+                    val dependencyProject = rootProject.findProject(dependency.path)
+                    if (dependencyProject != null && dependencyProject.path in servicePaths && dependencyProject != project) {
+                        dependencies += dependencyProject
+                    }
+                }
+        }
+        dependencies.sortedBy { it.name }
+    }
+}
+
+fun formatInfraLabel(key: String, explicitLabels: Map<String, String>): String =
+    explicitLabels[key] ?: key.split('-', '_')
+        .joinToString(" ") { segment ->
+            segment.replaceFirstChar { if (it.isLowerCase()) it.uppercaseChar() else it }
+        }
+
+data class ComposeServiceInfo(
+    val name: String,
+    var containerName: String? = null,
+    var dockerfile: String? = null,
+    val dependsOn: MutableSet<String> = mutableSetOf(),
+    val inferredInfra: MutableSet<String> = mutableSetOf()
+)
 
 val congressCliAvailable = file("tools/congress-cli").isDirectory
 
@@ -84,27 +121,8 @@ tasks.register("generateServiceMesh") {
     outputs.file(outputFile)
 
     doLast {
-        // Discover all Gradle subprojects that represent deployable services.
-        val serviceProjects = rootProject.subprojects
-            .filter { it.path.startsWith(":services:") }
-            .sortedBy { it.name }
-        val servicePaths = serviceProjects.map { it.path }.toSet()
-
-        // Collect service-to-service dependencies by inspecting project dependencies for each configuration.
-        val mesh = serviceProjects.associateWith { project ->
-            val deps = mutableSetOf<org.gradle.api.Project>()
-            project.configurations.forEach { configuration ->
-                configuration.dependencies
-                    .withType(ProjectDependency::class.java)
-                    .forEach { dependency: ProjectDependency ->
-                        val dependencyProject = rootProject.findProject(dependency.path)
-                        if (dependencyProject != null && dependencyProject.path in servicePaths && dependencyProject != project) {
-                            deps += dependencyProject
-                        }
-                    }
-            }
-            deps.toList().sortedBy { it.name }
-        }
+        val serviceProjects = serviceProjects()
+        val mesh = serviceMesh(serviceProjects)
 
         // Emit markdown with both a tabular view and a Mermaid graph for quick visualization.
         val builder = StringBuilder()
@@ -127,7 +145,7 @@ tasks.register("generateServiceMesh") {
         builder.appendLine()
         builder.appendLine("```mermaid")
         builder.appendLine("graph TD")
-        val nodeIds = mutableMapOf<org.gradle.api.Project, String>()
+        val nodeIds = mutableMapOf<Project, String>()
         serviceProjects.forEachIndexed { index, project ->
             val nodeId = "S$index"
             nodeIds[project] = nodeId
@@ -145,5 +163,255 @@ tasks.register("generateServiceMesh") {
 
         outputFile.asFile.writeText(builder.toString())
         logger.lifecycle("Wrote service dependency mesh documentation to ${outputFile.asFile.relativeTo(rootProject.projectDir)}")
+    }
+}
+
+tasks.register("generateArchitectureDoc") {
+    group = "documentation"
+    description = "Generates a platform architecture overview at design/architecture.md."
+    val outputFile = layout.projectDirectory.file("design/architecture.md")
+    outputs.file(outputFile)
+
+    doLast {
+        val serviceProjects = serviceProjects()
+        val mesh = serviceMesh(serviceProjects)
+        val infrastructureLabels = mapOf(
+            "mongo" to "MongoDB",
+            "redis" to "Redis",
+            "kafka" to "Kafka",
+            "frontend" to "React Frontend"
+        )
+        val knownInfraKeys = setOf("mongo", "redis", "kafka")
+
+        val composeServices = linkedMapOf<String, ComposeServiceInfo>()
+        val dockerCompose = layout.projectDirectory.file("docker-compose.yml").asFile
+        if (dockerCompose.exists()) {
+            // Parse docker-compose.yml to map each service to its container, Dockerfile, and infrastructure dependencies.
+            val lines = dockerCompose.readLines()
+            var inServicesSection = false
+            var currentService: ComposeServiceInfo? = null
+            var inBuildBlock = false
+            var inDependsOn = false
+            var inEnvironment = false
+            for (rawLine in lines) {
+                val line = rawLine.trimEnd()
+                val trimmed = line.trim()
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue
+                if (!inServicesSection) {
+                    if (trimmed == "services:") {
+                        inServicesSection = true
+                    }
+                    continue
+                }
+                val indent = line.indexOfFirst { !it.isWhitespace() }.let { if (it == -1) 0 else it }
+                if (indent == 0 && trimmed.endsWith(":") && trimmed != "services:") {
+                    currentService = null
+                    inBuildBlock = false
+                    inDependsOn = false
+                    inEnvironment = false
+                    inServicesSection = false
+                    continue
+                }
+                if (indent == 2 && trimmed.endsWith(":") && !trimmed.startsWith("-")) {
+                    val serviceName = trimmed.removeSuffix(":")
+                    currentService = composeServices.getOrPut(serviceName) { ComposeServiceInfo(serviceName) }
+                    inBuildBlock = false
+                    inDependsOn = false
+                    inEnvironment = false
+                    continue
+                }
+                val service = currentService ?: continue
+
+                if (indent == 4 && trimmed.startsWith("build:")) {
+                    inBuildBlock = true
+                    inDependsOn = false
+                    inEnvironment = false
+                    continue
+                }
+                if (inBuildBlock && indent <= 4) {
+                    inBuildBlock = false
+                }
+
+                if (indent == 4 && trimmed.startsWith("depends_on:")) {
+                    inDependsOn = true
+                    inEnvironment = false
+                    continue
+                }
+                if (inDependsOn && indent <= 4) {
+                    inDependsOn = false
+                }
+
+                if (indent == 4 && trimmed.startsWith("environment:")) {
+                    inEnvironment = true
+                    inDependsOn = false
+                    continue
+                }
+                if (inEnvironment && indent <= 4) {
+                    inEnvironment = false
+                }
+
+                if (inDependsOn && indent >= 6) {
+                    val dependencyName = when {
+                        trimmed.startsWith("- ") -> trimmed.removePrefix("- ").trim()
+                        trimmed.endsWith(":") -> trimmed.removeSuffix(":").trim()
+                        else -> null
+                    }
+                    if (!dependencyName.isNullOrBlank()) {
+                        service.dependsOn += dependencyName
+                    }
+                    continue
+                }
+
+                if (inBuildBlock && indent >= 6 && trimmed.startsWith("dockerfile:")) {
+                    service.dockerfile = trimmed.substringAfter("dockerfile:").trim()
+                    continue
+                }
+
+                if (indent == 4 && trimmed.startsWith("container_name:")) {
+                    service.containerName = trimmed.substringAfter("container_name:").trim()
+                    continue
+                }
+
+                if (inEnvironment && indent >= 6) {
+                    val entry = trimmed.removePrefix("- ").trim()
+                    val value = entry.substringAfter("=", "").trim()
+                    val hostCandidate = value.substringBefore(",").substringBefore(":").substringBefore("/").trim()
+                    if (hostCandidate.isNotEmpty() && hostCandidate in knownInfraKeys) {
+                        service.inferredInfra += hostCandidate
+                    }
+                }
+            }
+        }
+
+        val composeByName = composeServices.toMap()
+        val projectToComposeName = serviceProjects.associateWith { project ->
+            composeByName.values.firstOrNull { compose ->
+                compose.dockerfile?.contains("services/${project.name}/", ignoreCase = false) == true
+            }?.name ?: project.name
+        }
+        val composeNameToProject = projectToComposeName.entries.associate { (project, composeName) -> composeName to project }
+        val containerToProject = projectToComposeName.mapNotNull { (project, composeName) ->
+            val compose = composeByName[composeName] ?: return@mapNotNull null
+            val container = compose.containerName ?: compose.name
+            container to project
+        }.toMap()
+
+        // Parse nginx.conf to connect the reverse proxy to backend services and frontend assets.
+        val nginxFile = layout.projectDirectory.file("nginx.conf").asFile
+        val upstreamTargets = mutableMapOf<String, String>()
+        val proxiedHosts = linkedSetOf<String>()
+        if (nginxFile.exists()) {
+            var currentUpstream: String? = null
+            for (rawLine in nginxFile.readLines()) {
+                val line = rawLine.trim()
+                when {
+                    line.startsWith("upstream ") && line.endsWith("{") -> {
+                        currentUpstream = line.removePrefix("upstream ").substringBefore(" ").trim()
+                    }
+                    currentUpstream != null && line == "}" -> {
+                        currentUpstream = null
+                    }
+                    currentUpstream != null && line.startsWith("server ") -> {
+                        val target = line.removePrefix("server ").substringBefore(";").trim()
+                        val host = target.substringBefore(":").trim()
+                        upstreamTargets[currentUpstream!!] = host
+                    }
+                }
+                if (line.startsWith("proxy_pass ")) {
+                    val target = line.substringAfter("proxy_pass").substringAfter("http://").substringBefore(";").trim()
+                    val host = target.substringBefore("/").trim()
+                    if (host.isNotEmpty()) {
+                        proxiedHosts += upstreamTargets[host] ?: host
+                    }
+                }
+            }
+        }
+
+        val nodeLabels = linkedMapOf<String, String>()
+        val serviceNodeIds = serviceProjects.mapIndexed { index, project ->
+            val nodeId = "S$index"
+            nodeLabels[nodeId] = "${project.name} ${project.version}".trim()
+            project to nodeId
+        }.toMap()
+        val infraNodeIds = linkedMapOf<String, String>()
+        val edges = linkedSetOf<Pair<String, String>>()
+
+        fun registerInfraNode(key: String, label: String): String =
+            infraNodeIds.getOrPut(key) {
+                val id = "I${infraNodeIds.size}"
+                nodeLabels[id] = label
+                id
+            }
+
+        fun addEdge(from: String, to: String) {
+            if (from != to) {
+                edges += from to to
+            }
+        }
+
+        // Service mesh edges (caller -> callee).
+        mesh.forEach { (project, dependencies) ->
+            val fromId = serviceNodeIds.getValue(project)
+            dependencies.forEach { dependency ->
+                addEdge(fromId, serviceNodeIds.getValue(dependency))
+            }
+        }
+
+        // Connect services to infrastructure components such as MongoDB, Redis, and Kafka.
+        val serviceComposeNames = projectToComposeName.values.toSet()
+        projectToComposeName.forEach { (project, composeName) ->
+            val compose = composeByName[composeName] ?: return@forEach
+            val infraDeps = (compose.dependsOn + compose.inferredInfra).filter { it in knownInfraKeys }
+            val fromId = serviceNodeIds.getValue(project)
+            infraDeps.sorted().forEach { infraKey ->
+                if (infraKey !in serviceComposeNames) {
+                    val label = formatInfraLabel(infraKey, infrastructureLabels)
+                    val infraId = registerInfraNode(infraKey, label)
+                    addEdge(fromId, infraId)
+                }
+            }
+        }
+
+        val reverseProxyId = registerInfraNode("reverse-proxy", "Reverse Proxy (nginx)")
+        val externalClientsId = registerInfraNode("external-clients", "External Clients")
+        addEdge(externalClientsId, reverseProxyId)
+
+        // Orient reverse proxy outputs toward services and frontend assets.
+        proxiedHosts.forEach { host ->
+            val targetProject = containerToProject[host] ?: composeNameToProject[host]
+            val targetId = if (targetProject != null) {
+                serviceNodeIds[targetProject]
+            } else {
+                val label = formatInfraLabel(host, infrastructureLabels)
+                registerInfraNode(host, label)
+            }
+            if (targetId != null) {
+                addEdge(reverseProxyId, targetId)
+            }
+        }
+
+        val builder = StringBuilder()
+        builder.appendLine("# Platform Architecture")
+        builder.appendLine()
+        builder.appendLine("> Generated by `./gradlew generateArchitectureDoc`. Do not edit manually.")
+        builder.appendLine()
+        builder.appendLine("This document visualizes the relationships between Beacon services, shared infrastructure, and public ingress.")
+        builder.appendLine()
+        builder.appendLine("## Service and Infrastructure Graph")
+        builder.appendLine()
+        builder.appendLine("```mermaid")
+        builder.appendLine("graph LR")
+        nodeLabels.forEach { (id, label) ->
+            builder.appendLine("    $id[\"$label\"]")
+        }
+        edges.forEach { (from, to) ->
+            builder.appendLine("    $from --> $to")
+        }
+        builder.appendLine("```")
+        builder.appendLine()
+        builder.appendLine("Service nodes show semantic versions. Infrastructure nodes highlight shared dependencies and ingress routing, including MongoDB, Redis, Kafka, and the reverse proxy that fronts external traffic.")
+
+        outputFile.asFile.writeText(builder.toString())
+        logger.lifecycle("Wrote architecture overview to ${outputFile.asFile.relativeTo(rootProject.projectDir)}")
     }
 }

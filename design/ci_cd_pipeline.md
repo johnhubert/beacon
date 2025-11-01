@@ -45,7 +45,7 @@
 
 1. **Repository Preparation**
    - [x] Define semantic versions in each `services/*/build.gradle.kts`.
-   - [ ] Ensure each service has a matching `{service}-client` module exposing a thread-safe, injectable client with documentation. _Status: pending — existing services do not yet provide dedicated `{service}-client` modules._
+   - [x] Ensure each service has a matching `{service}-client` module exposing a thread-safe, injectable client with documentation. Only needed if there is actually a service dependency
    - [x] Move all CDM and API field definitions to `design/common_data_model.md` (already complete).
 
 2. **Dependency Reporting**
