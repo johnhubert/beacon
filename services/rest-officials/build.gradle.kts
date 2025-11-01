@@ -4,6 +4,8 @@ plugins {
     java
 }
 
+version = "1.0.0"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
